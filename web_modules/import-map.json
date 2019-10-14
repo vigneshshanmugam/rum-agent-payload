@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "@elastic/apm-rum": "./@elastic/apm-rum.js",
+    "lodash-es": "./lodash-es.js"
+  }
+}
