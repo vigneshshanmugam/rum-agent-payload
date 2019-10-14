@@ -1,5 +1,4 @@
 import { init, apm } from "../../web_modules/@elastic/apm-rum.js";
-import { pick } from "../../web_modules/lodash-es.js";
 
 init({
   serviceName: "rum-json-payload",
@@ -19,17 +18,17 @@ perfMonitoring.createTransactionDataModel = tr => {
   const payload = originalTrModel.call(perfMonitoring, tr);
   const spans = payload.spans;
 
-  payload.spans = spans.map(span =>
-    pick(span, [
-      "id",
-      "name",
-      "type",
-      "subType",
-      "sync",
-      "start",
-      "duration",
-      "context"
-    ])
+  payload.spans = spans.map(
+    ({ id, name, type, subType, sync, start, duration, context }) => ({
+      id,
+      name,
+      type,
+      subType,
+      sync,
+      start,
+      duration,
+      context
+    })
   );
 
   return payload;

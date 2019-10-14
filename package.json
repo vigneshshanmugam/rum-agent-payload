@@ -1,0 +1,26 @@
+{
+  "name": "rum-agent-payload",
+  "version": "0.0.0",
+  "description": "Testing Optimisations for payload size of Elastic RUM agent.",
+  "main": "server.js",
+  "repository": "git@github.com:vigneshshanmugam/rum-agent-payload.git",
+  "author": "vigneshshanmugam <vignesh.shanmugam22@gmail.com>",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "prepare": "npx pika install"
+  },
+  "@pika/web": {
+    "namedExports": {
+      "es6-promise": [
+        "Promise"
+      ]
+    }
+  },
+  "devDependencies": {
+    "@pika/web": "^0.6.1"
+  },
+  "dependencies": {
+    "@elastic/apm-rum": "^4.5.1"
+  }
+}
