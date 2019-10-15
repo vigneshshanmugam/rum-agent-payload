@@ -8,22 +8,72 @@
       type="image/x-icon"
     />
   </head>
-  
+
   <body>
     <style>
       a {
         text-decoration: none;
-        cursor: pointer;      
+        cursor: pointer;
+      }
+      .scenarios a {
+        font-size: 20px;
+      }
+      .scenarios p {
+        font-size: 16px;
       }
     </style>
     <h2>RUM Payload Optimisation Examples</h2>
-    <ul>
-      <li>
-        <a href="/examples/current">Current - APM RUM release without any optimisations</a>
-      </li></br>
-      <li>
-        <a href="/examples/json-payload">JSON - Moving Spans inside transaction object</a>
-      </li>
-    </ul>
+    <div class="scenarios">
+      <ul>
+        <li>
+          <a href="/examples/current"
+            >Current - APM RUM release without any optimisations</a
+          >
+          <p>
+            The current release of the RUM agent.
+          </p>
+        </li>
+        <li>
+          <a href="/examples/json-payload"
+            >JSON - Moving Spans inside transaction object</a
+          >
+          <p>
+            Changes include moving spans inside transaction object which would
+            effivetely lets us drop fields like `trace_id`, `parent_id` and
+            `transaction_id` since those fields already belong in the
+            transaction object.
+          </p>
+        </li>
+        <li>
+          <a href="/examples/unnecessary-fields"
+            >JSON - Dropping unnecessary span fields</a
+          >
+          <p>
+            Includes couple of changes to the span fields and transaction fields
+          </p>
+          <ol>
+            <li>
+              Removes `transaction.span_count` since it can be counted from
+              spans inside transaction
+            </li>
+            <li>
+              Removes `transaction.marks.navigationTiming` since we use only
+              transaction.marks.agent on the UI
+            </li>
+            <li>
+              Keeping `start` and `duration` as integers instead of floats
+            </li>
+            <li>
+              Removing span.sync flag when its falsy. Sent only when span is
+              really sync
+            </li>
+            <li>
+              Context `http.url` is removed for spans that has span name
+              referring to the URL
+            </li>
+          </ol>
+        </li>
+      </ul>
+    </div>
   </body>
 </html>
