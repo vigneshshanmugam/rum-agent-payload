@@ -47,8 +47,6 @@ apmServer.ndjsonTransactions = transactions => {
 };
 
 apmServer._postJson = async function(...args) {
-  const [endpoint, payload] = args;
-  console.log(payload);
   const result = await originalPostJson.apply(apmServer, args);
   const { message, size } = JSON.parse(result);
   document.body.innerHTML = `
