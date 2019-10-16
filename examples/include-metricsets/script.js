@@ -6,11 +6,20 @@ import {
   removeUnncessaryTrFields
 } from "../utils.js";
 
-initApm("rum-unncessary-fields");
+initApm("rum-metricsets");
 
 const perfMonitoring = apm.serviceFactory.getService("PerformanceMonitoring");
 const apmServer = apm.serviceFactory.getService("ApmServer");
 
 perfMonitoring.createTransactionDataModel = removeUnncessaryTrFields;
-apmServer.ndjsonTransactions = jsonTransactions;
+apmServer.ndjsonTransactions = transactions => {
+  return transactions.map(tr => {
+    const breakdowns = tr.breakdown;
+    breakdowns.forEach(breakdown => {
+      delete breakdown.transaction;
+    });
+    tr.breakdown = breakdowns;
+    return JSON.stringify({ transaction: tr });
+  });
+};
 apmServer._postJson = renderPayloadSize;

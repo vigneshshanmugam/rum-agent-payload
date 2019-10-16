@@ -32,6 +32,42 @@ export function filteredTransactionModel(tr) {
   return payload;
 }
 
+export function removeUnncessaryTrFields(tr) {
+  const payload = filteredTransactionModel(tr);
+  /**
+   * Optimize span context
+   */
+  const filterContext = (name, context) => {
+    if (context && context.http.url && name === context.http.url) {
+      delete context.http.url;
+    }
+    return context;
+  };
+
+  /**
+   * Remove spanCount
+   */
+  delete payload["span_count"];
+  /**
+   * Delete transaction marks.navigationTimings
+   */
+  delete payload.marks.navigationTiming;
+
+  payload.duration = parseInt(payload.duration);
+
+  payload.spans = payload.spans.map(
+    ({ id, name, type, subType, start, duration, context }) => ({
+      id,
+      name,
+      type: `${type}.${subType}`,
+      start: parseInt(start),
+      duration: parseInt(duration),
+      context: filterContext(name, context)
+    })
+  );
+  return payload;
+}
+
 export function jsonTransactions(transactions) {
   return transactions.map(tr => {
     let breakdowns = "";

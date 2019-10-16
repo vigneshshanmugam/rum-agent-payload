@@ -5,7 +5,7 @@ Testing Optimisations for payload size of Elastic RUM agent.
 ### Scenario
 
 - Stack - 7.4.0
-- JS Agent: 4.5.0
+- JS Agent: 4.5.1
 - No of Spans
   - 50 JS files
   - 3 Custom spans (Parsing document, DOM interactive etc)
@@ -13,8 +13,9 @@ Testing Optimisations for payload size of Elastic RUM agent.
 
 ### Comparision
 
-| Name of the test            | Payload Size (approx bytes) |
-| :-------------------------- | :-------------------------: |
-| Current release             |            24600            |
-| Spans inside transaction    |            18300            |
-| Removing unnecessary fields |            13300            |
+| Name of the test             | Payload Size (approx bytes) |
+| :--------------------------- | :-------------------------: |
+| Current release              |            24600            |
+| Spans inside transaction     |            18300            |
+| Removing unnecessary fields  |            13300            |
+| Breakdown inside transaction |            12800            |
