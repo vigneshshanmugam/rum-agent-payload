@@ -1,7 +1,6 @@
 import { apm } from "../../web_modules/@elastic/apm-rum.js";
 import {
   initApm,
-  jsonTransactions,
   renderPayloadSize,
   removeUnncessaryTrFields
 } from "../utils.js";
