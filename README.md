@@ -13,9 +13,10 @@ Testing Optimisations for payload size of Elastic RUM agent.
 
 ### Comparision
 
-| Name of the test             | Payload Size (approx bytes) |
-| :--------------------------- | :-------------------------: |
-| Current release              |            24600            |
-| Spans inside transaction     |            18300            |
-| Removing unnecessary fields  |            13300            |
-| Breakdown inside transaction |            12800            |
+| Name of the test              | Payload Size (approx bytes) |
+| :---------------------------- | :-------------------------: |
+| Current release               |            24600            |
+| Spans inside transaction      |            18300            |
+| Removing unnecessary fields   |            13300            |
+| Breakdown inside transaction  |            12800            |
+| Transaction field compression |            8800             |
