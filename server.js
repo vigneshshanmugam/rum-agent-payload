@@ -3,7 +3,7 @@ const handler = require("serve-handler");
 
 let resourceCount = 0;
 
-http
+module.exports = http
   .createServer(async (req, res) => {
     const pathname = req.url;
 
@@ -22,6 +22,7 @@ http
 
     if (pathname.endsWith(".js") && pathname.indexOf("test") >= 0) {
       ++resourceCount;
+      res.setHeader("cache-control", "no-cache, no-store, must-revalidate");
       return res.end(`${resourceCount}`);
     }
 
