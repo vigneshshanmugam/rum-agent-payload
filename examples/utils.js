@@ -80,9 +80,16 @@ export function jsonTransactions(transactions) {
 }
 
 export async function renderPayloadSize(...args) {
+  const payload = args[1].split("\n");
   const result = await originalPostJson.apply(apmServer, args);
   const { message, size } = JSON.parse(result);
   document.body.innerHTML = `
       <h2>${message}: ${size} bytes</h2>
+      <div>
+         <h3> Metadata </h2>
+          ${payload[0]}
+          <h3> Transaction </h2>
+          ${payload[1]}
+      </div>
     `;
 }
