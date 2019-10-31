@@ -10,7 +10,7 @@ export function initApm(name) {
   return init({
     serviceName: name,
     pageLoadTransactionName: name,
-    serverUrl: "http://localhost:8080",
+    serverUrl: window.location.origin,
     breakdownMetrics: true
   });
 }
