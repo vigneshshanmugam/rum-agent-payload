@@ -30,6 +30,7 @@ Assumes we are doing NDJSON -> JSON change and then compression
 
 Assumes that we are doing compression first and still keeping the format as NDJSON
 
-| Name of the test       | Payload Size (approx bytes) |
-| :--------------------- | :-------------------------: |
-| Shortening field names |            18600            |
+| Name of the test         | Payload Size (approx bytes) |
+| :----------------------- | :-------------------------: |
+| Shortening field names   |            18600            |
+| Remove duplicated fields |            9100             |
