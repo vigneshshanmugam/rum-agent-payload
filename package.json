@@ -23,7 +23,7 @@
     "@pika/web": "^0.6.1"
   },
   "dependencies": {
-    "@elastic/apm-rum": "^4.5.1",
+    "@elastic/apm-rum": "^4.6.0",
     "serve-handler": "^6.1.2"
   }
 }

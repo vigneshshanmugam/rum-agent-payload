@@ -34,3 +34,12 @@ Assumes that we are doing compression first and still keeping the format as NDJS
 | :----------------------- | :-------------------------: |
 | Shortening field names   |            18600            |
 | Remove duplicated fields |            9100             |
+
+#### Using Compression Stream
+
+Using the [compression package](https://github.com/vigneshshanmugam/compress-payload), We are able to reduce the payload size heavily without doing any techiques
+
+| Name of the test | Payload Size (approx bytes) |
+| :--------------- | :-------------------------: |
+| Current release  |            24600            |
+| Gzip Compression |            2940             |
