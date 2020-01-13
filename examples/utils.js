@@ -1,4 +1,5 @@
 import { init, apm } from "../web_modules/@elastic/apm-rum.js";
+import { compress, decompress, view } from "../web_modules/compress-payload.js";
 
 const perfMonitoring = apm.serviceFactory.getService("PerformanceMonitoring");
 const apmServer = apm.serviceFactory.getService("ApmServer");
@@ -80,11 +81,18 @@ export function jsonTransactions(transactions) {
 }
 
 export async function renderPayloadSize(...args) {
+  const payload = args[1];
+
+  const c = compress(payload);
+  const { size: bytes } = await view(c);
+  console.log("Compresssed Size", bytes);
+
   const [metadata, transaction, ...spansAndBreakdown] = args[1].split("\n");
   const result = await originalPostJson.apply(apmServer, args);
   const { message, size } = JSON.parse(result);
   document.body.innerHTML = `
       <h2>${message}: ${size} bytes</h2>
+      <h3 style="color: grey">Payload size using Compression Stream: ${bytes} bytes</h3>
       <div>
          <h3> Metadata </h2>
           ${metadata}

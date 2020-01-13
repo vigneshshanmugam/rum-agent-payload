@@ -1,5 +1,5 @@
 {
   "imports": {
-    "@elastic/apm-rum": "./@elastic/apm-rum.js"
+    "compress-payload": "./compress-payload.js"
   }
 }
