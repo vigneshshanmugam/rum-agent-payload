@@ -485,920 +485,6 @@ if (getRandomValues) {
 }
 });
 
-var slice = [].slice;
-
-function isCORSSupported() {
-  var xhr = new window.XMLHttpRequest();
-  return 'withCredentials' in xhr;
-}
-
-var byteToHex = [];
-
-for (var i = 0; i < 256; ++i) {
-  byteToHex[i] = (i + 0x100).toString(16).substr(1);
-}
-
-function bytesToHex(buf, offset) {
-  var i = offset || 0;
-  var bth = byteToHex;
-  return [bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]]].join('');
-}
-
-function getDtHeaderValue(span) {
-  var dtVersion = '00';
-  var dtUnSampledFlags = '00';
-  var dtSampledFlags = '01';
-
-  if (span && span.traceId && span.id && span.parentId) {
-    var flags = span.sampled ? dtSampledFlags : dtUnSampledFlags;
-    var id = span.sampled ? span.id : span.parentId;
-    return dtVersion + '-' + span.traceId + '-' + id + '-' + flags;
-  }
-}
-
-function parseDtHeaderValue(value) {
-  var parsed = /^([\da-f]{2})-([\da-f]{32})-([\da-f]{16})-([\da-f]{2})$/.exec(value);
-
-  if (parsed) {
-    var flags = parsed[4];
-    var sampled = flags !== '00';
-    return {
-      traceId: parsed[2],
-      id: parsed[3],
-      sampled: sampled
-    };
-  }
-}
-
-function isDtHeaderValid(header) {
-  return /^[\da-f]{2}-[\da-f]{32}-[\da-f]{16}-[\da-f]{2}$/.test(header) && header.slice(3, 35) !== '00000000000000000000000000000000' && header.slice(36, 52) !== '0000000000000000';
-}
-
-function checkSameOrigin(source, target) {
-  var isSame = false;
-
-  if (typeof target === 'string') {
-    isSame = source === target;
-  } else if (Array.isArray(target)) {
-    target.forEach(function (t) {
-      if (!isSame) {
-        isSame = checkSameOrigin(source, t);
-      }
-    });
-  }
-
-  return isSame;
-}
-
-function generateRandomId(length) {
-  var id = bytesToHex(rngBrowser());
-  return id.substr(0, length);
-}
-
-function isPlatformSupported() {
-  return typeof window !== 'undefined' && typeof Array.prototype.forEach === 'function' && typeof JSON.stringify === 'function' && typeof Function.bind === 'function' && window.performance && typeof window.performance.now === 'function' && isCORSSupported();
-}
-
-function setLabel(key, value, obj) {
-  if (!obj || !key) return;
-  var skey = removeInvalidChars(key);
-
-  if (value) {
-    value = String(value);
-  }
-
-  obj[skey] = value;
-  return obj;
-}
-
-var navigationTimingKeys = ['fetchStart', 'domainLookupStart', 'domainLookupEnd', 'connectStart', 'connectEnd', 'secureConnectionStart', 'requestStart', 'responseStart', 'responseEnd', 'domLoading', 'domInteractive', 'domContentLoadedEventStart', 'domContentLoadedEventEnd', 'domComplete', 'loadEventStart', 'loadEventEnd'];
-
-function getNavigationTimingMarks() {
-  var timing = window.performance.timing;
-  var fetchStart = timing.fetchStart;
-  var marks = {};
-  navigationTimingKeys.forEach(function (timingKey) {
-    var m = timing[timingKey];
-
-    if (m && m >= fetchStart) {
-      marks[timingKey] = m - fetchStart;
-    }
-  });
-  return marks;
-}
-
-function getPaintTimingMarks() {
-  var paints = {};
-  var perf = window.performance;
-
-  if (typeof perf.getEntriesByType === 'function') {
-    var entries = perf.getEntriesByType('paint');
-
-    if (entries.length > 0) {
-      var timings = perf.timing;
-      var unloadDiff = timings.fetchStart - timings.navigationStart;
-
-      for (var i = 0; i < entries.length; i++) {
-        var data = entries[i];
-        var calcPaintTime = unloadDiff >= 0 ? data.startTime - unloadDiff : data.startTime;
-        paints[data.name] = calcPaintTime;
-      }
-    }
-  }
-
-  return paints;
-}
-
-function getServerTimingInfo(serverTimingEntries) {
-  if (serverTimingEntries === void 0) {
-    serverTimingEntries = [];
-  }
-
-  var serverTimingInfo = [];
-  var entrySeparator = ', ';
-  var valueSeparator = ';';
-
-  for (var _i = 0; _i < serverTimingEntries.length; _i++) {
-    var _serverTimingEntries$ = serverTimingEntries[_i],
-        name = _serverTimingEntries$.name,
-        duration = _serverTimingEntries$.duration,
-        description = _serverTimingEntries$.description;
-    var timingValue = name;
-
-    if (description) {
-      timingValue += valueSeparator + 'desc=' + description;
-    }
-
-    if (duration) {
-      timingValue += valueSeparator + 'dur=' + duration;
-    }
-
-    serverTimingInfo.push(timingValue);
-  }
-
-  return serverTimingInfo.join(entrySeparator);
-}
-
-function getPageMetadata() {
-  return {
-    page: {
-      referer: document.referrer,
-      url: window.location.href
-    }
-  };
-}
-
-function stripQueryStringFromUrl(url) {
-  return url && url.split('?')[0];
-}
-
-function isObject(value) {
-  return value !== null && typeof value === 'object';
-}
-
-function isFunction(value) {
-  return typeof value === 'function';
-}
-
-function baseExtend(dst, objs, deep) {
-  for (var i = 0, ii = objs.length; i < ii; ++i) {
-    var obj = objs[i];
-    if (!isObject(obj) && !isFunction(obj)) continue;
-    var keys = Object.keys(obj);
-
-    for (var j = 0, jj = keys.length; j < jj; j++) {
-      var key = keys[j];
-      var src = obj[key];
-
-      if (deep && isObject(src)) {
-        if (!isObject(dst[key])) dst[key] = Array.isArray(src) ? [] : {};
-        baseExtend(dst[key], [src], false);
-      } else {
-        dst[key] = src;
-      }
-    }
-  }
-
-  return dst;
-}
-
-function getElasticScript() {
-  if (typeof document !== 'undefined') {
-    var scripts = document.getElementsByTagName('script');
-
-    for (var i = 0, l = scripts.length; i < l; i++) {
-      var sc = scripts[i];
-
-      if (sc.src.indexOf('elastic') > 0) {
-        return sc;
-      }
-    }
-  }
-}
-
-function getCurrentScript() {
-  if (typeof document !== 'undefined') {
-    var currentScript = document.currentScript;
-
-    if (!currentScript) {
-      return getElasticScript();
-    }
-
-    return currentScript;
-  }
-}
-
-function extend(dst) {
-  return baseExtend(dst, slice.call(arguments, 1), false);
-}
-
-function merge(dst) {
-  return baseExtend(dst, slice.call(arguments, 1), true);
-}
-
-function isUndefined(obj) {
-  return typeof obj === 'undefined';
-}
-
-function noop() {}
-
-function removeInvalidChars(key) {
-  return key.replace(/[.*"]/g, '_');
-}
-
-function getLatestNonXHRSpan(spans) {
-  var latestSpan = null;
-
-  for (var _i2 = 0; _i2 < spans.length; _i2++) {
-    var span = spans[_i2];
-
-    if (String(span.type).indexOf('external') === -1 && (!latestSpan || latestSpan._end < span._end)) {
-      latestSpan = span;
-    }
-  }
-
-  return latestSpan;
-}
-
-function getEarliestSpan(spans) {
-  var earliestSpan = spans[0];
-
-  for (var _i3 = 1; _i3 < spans.length; _i3++) {
-    var span = spans[_i3];
-
-    if (earliestSpan._start > span._start) {
-      earliestSpan = span;
-    }
-  }
-
-  return earliestSpan;
-}
-
-function getPageLoadMarks() {
-  var marks = getNavigationTimingMarks();
-  var paintMarks = getPaintTimingMarks();
-  var agent = {
-    timeToFirstByte: marks.responseStart,
-    domInteractive: marks.domInteractive,
-    domComplete: marks.domComplete
-  };
-
-  if (paintMarks['first-contentful-paint']) {
-    agent.firstContentfulPaint = paintMarks['first-contentful-paint'];
-  }
-
-  return {
-    navigationTiming: marks,
-    agent: agent
-  };
-}
-
-function now() {
-  return window.performance.now();
-}
-
-function getDuration(start, end) {
-  if (isUndefined(end) || isUndefined(start)) {
-    return null;
-  }
-
-  return parseFloat(end - start);
-}
-
-var SCHEDULE = 'schedule';
-var INVOKE = 'invoke';
-var CLEAR = 'clear';
-var ADD_EVENT_LISTENER_STR = 'addEventListener';
-var REMOVE_EVENT_LISTENER_STR = 'removeEventListener';
-var RESOURCE_INITIATOR_TYPES = ['link', 'css', 'script', 'img', 'xmlhttprequest', 'fetch', 'beacon', 'iframe'];
-var REUSABILITY_THRESHOLD = 5000;
-var MAX_SPAN_DURATION = 5 * 60 * 1000;
-var PAGE_LOAD = 'page-load';
-var NAME_UNKNOWN = 'Unknown';
-var TYPE_CUSTOM = 'custom';
-var USER_TIMING_THRESHOLD = 60;
-var KEYWORD_LIMIT = 1024;
-var TRANSACTION_START = 'transaction:start';
-var TRANSACTION_END = 'transaction:end';
-var CONFIG_CHANGE = 'config:change';
-var XMLHTTPREQUEST = 'xmlhttprequest';
-var FETCH = 'fetch';
-var HISTORY = 'history';
-var ERROR = 'error';
-var BEFORE_EVENT = ':before';
-var AFTER_EVENT = ':after';
-
-var METADATA_MODEL = {
-  service: {
-    name: [KEYWORD_LIMIT, true],
-    version: true,
-    agent: {
-      version: [KEYWORD_LIMIT, true]
-    },
-    environment: true
-  }
-};
-var RESPONSE_MODEL = {
-  '*': true,
-  headers: {
-    '*': true
-  }
-};
-var CONTEXT_MODEL = {
-  user: {
-    id: true,
-    email: true,
-    username: true
-  },
-  tags: {
-    '*': true
-  },
-  http: {
-    response: RESPONSE_MODEL
-  },
-  response: RESPONSE_MODEL
-};
-var SPAN_MODEL = {
-  name: [KEYWORD_LIMIT, true],
-  type: [KEYWORD_LIMIT, true],
-  id: [KEYWORD_LIMIT, true],
-  trace_id: [KEYWORD_LIMIT, true],
-  parent_id: [KEYWORD_LIMIT, true],
-  transaction_id: [KEYWORD_LIMIT, true],
-  subtype: true,
-  action: true,
-  context: CONTEXT_MODEL
-};
-var TRANSACTION_MODEL = {
-  name: true,
-  parent_id: true,
-  type: [KEYWORD_LIMIT, true],
-  id: [KEYWORD_LIMIT, true],
-  trace_id: [KEYWORD_LIMIT, true],
-  span_count: {
-    started: [KEYWORD_LIMIT, true]
-  },
-  context: CONTEXT_MODEL
-};
-var ERROR_MODEL = {
-  id: [KEYWORD_LIMIT, true],
-  trace_id: true,
-  transaction_id: true,
-  parent_id: true,
-  culprit: true,
-  exception: {
-    type: true
-  },
-  transaction: {
-    type: true
-  },
-  context: CONTEXT_MODEL
-};
-
-function truncate(value, limit, required, placeholder) {
-  if (limit === void 0) {
-    limit = KEYWORD_LIMIT;
-  }
-
-  if (required === void 0) {
-    required = false;
-  }
-
-  if (placeholder === void 0) {
-    placeholder = 'N/A';
-  }
-
-  if (required && isEmpty(value)) {
-    value = placeholder;
-  }
-
-  if (typeof value === 'string') {
-    return value.substring(0, limit);
-  }
-
-  return value;
-}
-
-function isEmpty(value) {
-  return value == null || value === '' || typeof value === 'undefined';
-}
-
-function replaceValue(target, key, currModel) {
-  var value = truncate(target[key], currModel[0], currModel[1]);
-
-  if (isEmpty(value)) {
-    delete target[key];
-    return;
-  }
-
-  target[key] = value;
-}
-
-function truncateModel(model, target, childTarget) {
-  if (model === void 0) {
-    model = {};
-  }
-
-  if (childTarget === void 0) {
-    childTarget = target;
-  }
-
-  var keys = Object.keys(model);
-  var emptyArr = [];
-
-  var _loop = function _loop(i) {
-    var currKey = keys[i];
-    var currModel = model[currKey] === true ? emptyArr : model[currKey];
-
-    if (!Array.isArray(currModel)) {
-      truncateModel(currModel, target, childTarget[currKey]);
-    } else {
-      if (currKey === '*') {
-        Object.keys(childTarget).forEach(function (key) {
-          return replaceValue(childTarget, key, currModel);
-        });
-      } else {
-        replaceValue(childTarget, currKey, currModel);
-      }
-    }
-  };
-
-  for (var i = 0; i < keys.length; i++) {
-    _loop(i);
-  }
-
-  return target;
-}
-
-var ErrorLogging = function () {
-  function ErrorLogging(apmServer, configService, transactionService) {
-    this._apmServer = apmServer;
-    this._configService = configService;
-    this._transactionService = transactionService;
-  }
-
-  var _proto = ErrorLogging.prototype;
-
-  _proto.createErrorDataModel = function createErrorDataModel(errorEvent) {
-    var frames = createStackTraces(errorEvent);
-    var filteredFrames = filterInvalidFrames(frames);
-    var culprit = '(inline script)';
-    var lastFrame = filteredFrames[filteredFrames.length - 1];
-
-    if (lastFrame && lastFrame.filename) {
-      culprit = lastFrame.filename;
-    }
-
-    var message = errorEvent.message,
-        error = errorEvent.error;
-    var errorMessage = message;
-    var errorType = '';
-    var errorContext = {};
-
-    if (error && typeof error === 'object') {
-      errorMessage = errorMessage || error.message;
-      errorType = error.name;
-      errorContext = this._getErrorProperties(error);
-    }
-
-    if (!errorType) {
-      if (errorMessage && errorMessage.indexOf(':') > -1) {
-        errorType = errorMessage.split(':')[0];
-      }
-    }
-
-    var configContext = this._configService.get('context');
-
-    var browserMetadata = getPageMetadata();
-    var context = merge({}, browserMetadata, configContext, errorContext);
-    var errorObject = {
-      id: generateRandomId(),
-      culprit: culprit,
-      exception: {
-        message: errorMessage,
-        stacktrace: filteredFrames,
-        type: errorType
-      },
-      context: context
-    };
-
-    var currentTransaction = this._transactionService.getCurrentTransaction();
-
-    if (currentTransaction) {
-      errorObject.trace_id = currentTransaction.traceId;
-      errorObject.parent_id = currentTransaction.id;
-      errorObject.transaction_id = currentTransaction.id;
-      errorObject.transaction = {
-        type: currentTransaction.type,
-        sampled: currentTransaction.sampled
-      };
-    }
-
-    return truncateModel(ERROR_MODEL, errorObject);
-  };
-
-  _proto.logErrorEvent = function logErrorEvent(errorEvent, sendImmediately) {
-    if (typeof errorEvent === 'undefined') {
-      return;
-    }
-
-    var errorObject = this.createErrorDataModel(errorEvent);
-
-    if (typeof errorObject.exception.message === 'undefined') {
-      return;
-    }
-
-    if (sendImmediately) {
-      return this._apmServer.sendErrors([errorObject]);
-    } else {
-      return this._apmServer.addError(errorObject);
-    }
-  };
-
-  _proto.registerListeners = function registerListeners() {
-    var _this = this;
-
-    window.addEventListener('error', function (errorEvent) {
-      return _this.logErrorEvent(errorEvent);
-    });
-    window.addEventListener('unhandledrejection', function (promiseRejectionEvent) {
-      return _this.logPromiseEvent(promiseRejectionEvent);
-    });
-  };
-
-  _proto.logPromiseEvent = function logPromiseEvent(promiseRejectionEvent) {
-    var prefix = 'Unhandled promise rejection: ';
-    var reason = promiseRejectionEvent.reason;
-
-    if (reason == null) {
-      this.logError(prefix + '<no reason specified>');
-    } else if (typeof reason.message === 'string') {
-      this.logError({
-        message: prefix + reason.message,
-        stack: reason.stack ? reason.stack : null
-      });
-    } else if (typeof reason !== 'object') {
-      this.logError(prefix + reason);
-    }
-  };
-
-  _proto.logError = function logError(messageOrError) {
-    var errorEvent = {};
-
-    if (typeof messageOrError === 'string') {
-      errorEvent.message = messageOrError;
-    } else {
-      errorEvent.error = messageOrError;
-    }
-
-    return this.logErrorEvent(errorEvent);
-  };
-
-  _proto._getErrorProperties = function _getErrorProperties(error) {
-    var properties = {};
-    Object.keys(error).forEach(function (key) {
-      if (key === 'stack') return;
-      var val = error[key];
-      if (val === null) return;
-
-      switch (typeof val) {
-        case 'function':
-          return;
-
-        case 'object':
-          if (typeof val.toISOString !== 'function') return;
-          val = val.toISOString();
-      }
-
-      properties[key] = val;
-    });
-    return properties;
-  };
-
-  return ErrorLogging;
-}();
-
-var ErrorLogging$1 = {
-  ErrorLogging: ErrorLogging,
-  registerServices: function registerServices(serviceFactory) {
-    serviceFactory.registerServiceCreator('ErrorLogging', function () {
-      var apmService = serviceFactory.getService('ApmServer');
-      var configService = serviceFactory.getService('ConfigService');
-      var transactionService = serviceFactory.getService('TransactionService');
-      return new ErrorLogging(apmService, configService, transactionService);
-    });
-  }
-};
-
-var RULES = [['#', 'hash'], ['?', 'query'], ['/', 'path'], ['@', 'auth', 1], [NaN, 'host', undefined, 1]];
-var PROTOCOL_REGEX = /^([a-z][a-z0-9.+-]*:)?(\/\/)?([\S\s]*)/i;
-
-var Url = function () {
-  function Url(url) {
-    var _this$extractProtocol = this.extractProtocol(url || ''),
-        protocol = _this$extractProtocol.protocol,
-        address = _this$extractProtocol.address,
-        slashes = _this$extractProtocol.slashes;
-
-    var relative = !protocol && !slashes;
-    var location = this.getLocation();
-    var instructions = RULES.slice();
-    address = address.replace('\\', '/');
-
-    if (!slashes) {
-      instructions[2] = [NaN, 'path'];
-    }
-
-    var index;
-
-    for (var i = 0; i < instructions.length; i++) {
-      var instruction = instructions[i];
-      var parse = instruction[0];
-      var key = instruction[1];
-
-      if (typeof parse === 'string') {
-        index = address.indexOf(parse);
-
-        if (~index) {
-          var instLength = instruction[2];
-
-          if (instLength) {
-            var newIndex = address.lastIndexOf(parse);
-            index = Math.max(index, newIndex);
-            this[key] = address.slice(0, index);
-            address = address.slice(index + instLength);
-          } else {
-            this[key] = address.slice(index);
-            address = address.slice(0, index);
-          }
-        }
-      } else {
-        this[key] = address;
-        address = '';
-      }
-
-      this[key] = this[key] || (relative && instruction[3] ? location[key] || '' : '');
-      if (instruction[3]) this[key] = this[key].toLowerCase();
-    }
-
-    if (relative && this.path.charAt(0) !== '/') {
-      this.path = '/' + this.path;
-    }
-
-    this.relative = relative;
-    this.protocol = protocol || location.protocol;
-    this.origin = this.protocol && this.host && this.protocol !== 'file:' ? this.protocol + '//' + this.host : 'null';
-    this.href = this.toString();
-  }
-
-  var _proto = Url.prototype;
-
-  _proto.toString = function toString() {
-    var result = this.protocol;
-    result += '//';
-
-    if (this.auth) {
-      var REDACTED = '[REDACTED]';
-      var userpass = this.auth.split(':');
-      var username = userpass[0] ? REDACTED : '';
-      var password = userpass[1] ? ':' + REDACTED : '';
-      result += username + password + '@';
-    }
-
-    result += this.host;
-    result += this.path;
-    result += this.query;
-    result += this.hash;
-    return result;
-  };
-
-  _proto.getLocation = function getLocation() {
-    var globalVar = {};
-
-    if (typeof window !== 'undefined') {
-      globalVar = window;
-    }
-
-    return globalVar.location;
-  };
-
-  _proto.extractProtocol = function extractProtocol(url) {
-    var match = PROTOCOL_REGEX.exec(url);
-    return {
-      protocol: match[1] ? match[1].toLowerCase() : '',
-      slashes: !!match[2],
-      address: match[3]
-    };
-  };
-
-  return Url;
-}();
-
-var globalState = {
-  fetchInProgress: false
-};
-function apmSymbol(name) {
-  return '__apm_symbol__' + name;
-}
-
-function isPropertyWritable(propertyDesc) {
-  if (!propertyDesc) {
-    return true;
-  }
-
-  if (propertyDesc.writable === false) {
-    return false;
-  }
-
-  return !(typeof propertyDesc.get === 'function' && typeof propertyDesc.set === 'undefined');
-}
-
-function attachOriginToPatched(patched, original) {
-  patched[apmSymbol('OriginalDelegate')] = original;
-}
-
-function patchMethod(target, name, patchFn) {
-  var proto = target;
-
-  while (proto && !proto.hasOwnProperty(name)) {
-    proto = Object.getPrototypeOf(proto);
-  }
-
-  if (!proto && target[name]) {
-    proto = target;
-  }
-
-  var delegateName = apmSymbol(name);
-  var delegate;
-
-  if (proto && !(delegate = proto[delegateName])) {
-    delegate = proto[delegateName] = proto[name];
-    var desc = proto && Object.getOwnPropertyDescriptor(proto, name);
-
-    if (isPropertyWritable(desc)) {
-      var patchDelegate = patchFn(delegate, delegateName, name);
-
-      proto[name] = function () {
-        return patchDelegate(this, arguments);
-      };
-
-      attachOriginToPatched(proto[name], delegate);
-    }
-  }
-
-  return delegate;
-}
-var XHR_IGNORE = apmSymbol('xhrIgnore');
-var XHR_SYNC = apmSymbol('xhrSync');
-var XHR_URL = apmSymbol('xhrURL');
-var XHR_METHOD = apmSymbol('xhrMethod');
-
-var XHR_TASK = apmSymbol('xhrTask');
-var XHR_LISTENER = apmSymbol('xhrListener');
-var XHR_SCHEDULED = apmSymbol('xhrScheduled');
-function patchXMLHttpRequest(callback) {
-  var XMLHttpRequestPrototype = XMLHttpRequest.prototype;
-  var oriAddListener = XMLHttpRequestPrototype[ADD_EVENT_LISTENER_STR];
-  var oriRemoveListener = XMLHttpRequestPrototype[REMOVE_EVENT_LISTENER_STR];
-
-  if (!oriAddListener) {
-    var XMLHttpRequestEventTarget = window['XMLHttpRequestEventTarget'];
-
-    if (XMLHttpRequestEventTarget) {
-      var XMLHttpRequestEventTargetPrototype = XMLHttpRequestEventTarget.prototype;
-      oriAddListener = XMLHttpRequestEventTargetPrototype[ADD_EVENT_LISTENER_STR];
-      oriRemoveListener = XMLHttpRequestEventTargetPrototype[REMOVE_EVENT_LISTENER_STR];
-    }
-  }
-
-  var READY_STATE_CHANGE = 'readystatechange';
-
-  function invokeTask(task) {
-    task.state = INVOKE;
-
-    if (!task.ignore) {
-      callback(INVOKE, task);
-    }
-  }
-
-  function scheduleTask(task) {
-    XMLHttpRequest[XHR_SCHEDULED] = false;
-    task.state = SCHEDULE;
-
-    if (!task.ignore) {
-      callback(SCHEDULE, task);
-    }
-
-    var data = task.data;
-    var target = data.target;
-    var listener = target[XHR_LISTENER];
-
-    if (!oriAddListener) {
-      oriAddListener = target[ADD_EVENT_LISTENER_STR];
-      oriRemoveListener = target[REMOVE_EVENT_LISTENER_STR];
-    }
-
-    if (listener) {
-      oriRemoveListener.call(target, READY_STATE_CHANGE, listener);
-    }
-
-    var newListener = target[XHR_LISTENER] = function () {
-      if (target.readyState === target.DONE) {
-        if (!data.aborted && XMLHttpRequest[XHR_SCHEDULED] && task.state === SCHEDULE) {
-          invokeTask(task);
-        }
-      }
-    };
-
-    oriAddListener.call(target, READY_STATE_CHANGE, newListener);
-    var storedTask = target[XHR_TASK];
-
-    if (!storedTask) {
-      target[XHR_TASK] = task;
-    }
-
-    var result = sendNative.apply(target, data.args);
-    XMLHttpRequest[XHR_SCHEDULED] = true;
-    return result;
-  }
-
-  function clearTask(task) {
-    task.state = CLEAR;
-    callback(CLEAR, task);
-    var data = task.data;
-    data.aborted = true;
-  }
-
-  var openNative = patchMethod(XMLHttpRequestPrototype, 'open', function () {
-    return function (self, args) {
-      self[XHR_METHOD] = args[0];
-      self[XHR_URL] = args[1];
-      self[XHR_SYNC] = args[2] === false;
-      return openNative.apply(self, args);
-    };
-  });
-  var sendNative = patchMethod(XMLHttpRequestPrototype, 'send', function () {
-    return function (self, args) {
-      var task = {
-        source: XMLHTTPREQUEST,
-        state: '',
-        type: 'macroTask',
-        ignore: self[XHR_IGNORE],
-        data: {
-          target: self,
-          method: self[XHR_METHOD],
-          sync: self[XHR_SYNC],
-          url: self[XHR_URL],
-          args: args,
-          aborted: false
-        }
-      };
-      var result = scheduleTask(task);
-
-      if (self[XHR_SYNC]) {
-        invokeTask(task);
-      }
-
-      return result;
-    };
-  });
-  var abortNative = patchMethod(XMLHttpRequestPrototype, 'abort', function () {
-    return function (self, args) {
-      var task = self[XHR_TASK];
-
-      if (task && typeof task.type === 'string') {
-        if (task.data && task.data.aborted) {
-          return;
-        }
-
-        clearTask(task);
-      }
-
-      return abortNative.apply(self, args);
-    };
-  });
-}
-
 var es6Promise = createCommonjsModule(function (module, exports) {
 /*!
  * @overview es6-promise - a tiny implementation of Promises/A+.
@@ -2572,6 +1658,998 @@ return Promise$1;
 });
 var es6Promise_1 = es6Promise.Promise;
 
+var slice = [].slice;
+
+function isCORSSupported() {
+  var xhr = new window.XMLHttpRequest();
+  return 'withCredentials' in xhr;
+}
+
+var byteToHex = [];
+
+for (var i = 0; i < 256; ++i) {
+  byteToHex[i] = (i + 0x100).toString(16).substr(1);
+}
+
+function bytesToHex(buf, offset) {
+  var i = offset || 0;
+  var bth = byteToHex;
+  return [bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]]].join('');
+}
+
+function getDtHeaderValue(span) {
+  var dtVersion = '00';
+  var dtUnSampledFlags = '00';
+  var dtSampledFlags = '01';
+
+  if (span && span.traceId && span.id && span.parentId) {
+    var flags = span.sampled ? dtSampledFlags : dtUnSampledFlags;
+    var id = span.sampled ? span.id : span.parentId;
+    return dtVersion + '-' + span.traceId + '-' + id + '-' + flags;
+  }
+}
+
+function parseDtHeaderValue(value) {
+  var parsed = /^([\da-f]{2})-([\da-f]{32})-([\da-f]{16})-([\da-f]{2})$/.exec(value);
+
+  if (parsed) {
+    var flags = parsed[4];
+    var sampled = flags !== '00';
+    return {
+      traceId: parsed[2],
+      id: parsed[3],
+      sampled: sampled
+    };
+  }
+}
+
+function isDtHeaderValid(header) {
+  return /^[\da-f]{2}-[\da-f]{32}-[\da-f]{16}-[\da-f]{2}$/.test(header) && header.slice(3, 35) !== '00000000000000000000000000000000' && header.slice(36, 52) !== '0000000000000000';
+}
+
+function checkSameOrigin(source, target) {
+  var isSame = false;
+
+  if (typeof target === 'string') {
+    isSame = source === target;
+  } else if (Array.isArray(target)) {
+    target.forEach(function (t) {
+      if (!isSame) {
+        isSame = checkSameOrigin(source, t);
+      }
+    });
+  }
+
+  return isSame;
+}
+
+function generateRandomId(length) {
+  var id = bytesToHex(rngBrowser());
+  return id.substr(0, length);
+}
+
+function isPlatformSupported() {
+  return typeof window !== 'undefined' && typeof Array.prototype.forEach === 'function' && typeof JSON.stringify === 'function' && typeof Function.bind === 'function' && window.performance && typeof window.performance.now === 'function' && isCORSSupported();
+}
+
+function setLabel(key, value, obj) {
+  if (!obj || !key) return;
+  var skey = removeInvalidChars(key);
+
+  if (value) {
+    value = String(value);
+  }
+
+  obj[skey] = value;
+  return obj;
+}
+
+var navigationTimingKeys = ['fetchStart', 'domainLookupStart', 'domainLookupEnd', 'connectStart', 'connectEnd', 'secureConnectionStart', 'requestStart', 'responseStart', 'responseEnd', 'domLoading', 'domInteractive', 'domContentLoadedEventStart', 'domContentLoadedEventEnd', 'domComplete', 'loadEventStart', 'loadEventEnd'];
+
+function getNavigationTimingMarks() {
+  var timing = window.performance.timing;
+  var fetchStart = timing.fetchStart;
+  var marks = {};
+  navigationTimingKeys.forEach(function (timingKey) {
+    var m = timing[timingKey];
+
+    if (m && m >= fetchStart) {
+      marks[timingKey] = m - fetchStart;
+    }
+  });
+  return marks;
+}
+
+function getPaintTimingMarks() {
+  var paints = {};
+  var perf = window.performance;
+
+  if (typeof perf.getEntriesByType === 'function') {
+    var entries = perf.getEntriesByType('paint');
+
+    if (entries.length > 0) {
+      var timings = perf.timing;
+      var unloadDiff = timings.fetchStart - timings.navigationStart;
+
+      for (var i = 0; i < entries.length; i++) {
+        var data = entries[i];
+        var calcPaintTime = unloadDiff >= 0 ? data.startTime - unloadDiff : data.startTime;
+        paints[data.name] = calcPaintTime;
+      }
+    }
+  }
+
+  return paints;
+}
+
+function getServerTimingInfo(serverTimingEntries) {
+  if (serverTimingEntries === void 0) {
+    serverTimingEntries = [];
+  }
+
+  var serverTimingInfo = [];
+  var entrySeparator = ', ';
+  var valueSeparator = ';';
+
+  for (var _i = 0; _i < serverTimingEntries.length; _i++) {
+    var _serverTimingEntries$ = serverTimingEntries[_i],
+        name = _serverTimingEntries$.name,
+        duration = _serverTimingEntries$.duration,
+        description = _serverTimingEntries$.description;
+    var timingValue = name;
+
+    if (description) {
+      timingValue += valueSeparator + 'desc=' + description;
+    }
+
+    if (duration) {
+      timingValue += valueSeparator + 'dur=' + duration;
+    }
+
+    serverTimingInfo.push(timingValue);
+  }
+
+  return serverTimingInfo.join(entrySeparator);
+}
+
+function getPageMetadata() {
+  return {
+    page: {
+      referer: document.referrer,
+      url: window.location.href
+    }
+  };
+}
+
+function stripQueryStringFromUrl(url) {
+  return url && url.split('?')[0];
+}
+
+function isObject(value) {
+  return value !== null && typeof value === 'object';
+}
+
+function isFunction(value) {
+  return typeof value === 'function';
+}
+
+function baseExtend(dst, objs, deep) {
+  for (var i = 0, ii = objs.length; i < ii; ++i) {
+    var obj = objs[i];
+    if (!isObject(obj) && !isFunction(obj)) continue;
+    var keys = Object.keys(obj);
+
+    for (var j = 0, jj = keys.length; j < jj; j++) {
+      var key = keys[j];
+      var src = obj[key];
+
+      if (deep && isObject(src)) {
+        if (!isObject(dst[key])) dst[key] = Array.isArray(src) ? [] : {};
+        baseExtend(dst[key], [src], false);
+      } else {
+        dst[key] = src;
+      }
+    }
+  }
+
+  return dst;
+}
+
+function getElasticScript() {
+  if (typeof document !== 'undefined') {
+    var scripts = document.getElementsByTagName('script');
+
+    for (var i = 0, l = scripts.length; i < l; i++) {
+      var sc = scripts[i];
+
+      if (sc.src.indexOf('elastic') > 0) {
+        return sc;
+      }
+    }
+  }
+}
+
+function getCurrentScript() {
+  if (typeof document !== 'undefined') {
+    var currentScript = document.currentScript;
+
+    if (!currentScript) {
+      return getElasticScript();
+    }
+
+    return currentScript;
+  }
+}
+
+function extend(dst) {
+  return baseExtend(dst, slice.call(arguments, 1), false);
+}
+
+function merge(dst) {
+  return baseExtend(dst, slice.call(arguments, 1), true);
+}
+
+function isUndefined(obj) {
+  return typeof obj === 'undefined';
+}
+
+function noop() {}
+
+function removeInvalidChars(key) {
+  return key.replace(/[.*"]/g, '_');
+}
+
+function getLatestNonXHRSpan(spans) {
+  var latestSpan = null;
+
+  for (var _i2 = 0; _i2 < spans.length; _i2++) {
+    var span = spans[_i2];
+
+    if (String(span.type).indexOf('external') === -1 && (!latestSpan || latestSpan._end < span._end)) {
+      latestSpan = span;
+    }
+  }
+
+  return latestSpan;
+}
+
+function getEarliestSpan(spans) {
+  var earliestSpan = spans[0];
+
+  for (var _i3 = 1; _i3 < spans.length; _i3++) {
+    var span = spans[_i3];
+
+    if (earliestSpan._start > span._start) {
+      earliestSpan = span;
+    }
+  }
+
+  return earliestSpan;
+}
+
+function getPageLoadMarks() {
+  var marks = getNavigationTimingMarks();
+  var paintMarks = getPaintTimingMarks();
+  var agent = {
+    timeToFirstByte: marks.responseStart,
+    domInteractive: marks.domInteractive,
+    domComplete: marks.domComplete
+  };
+
+  if (paintMarks['first-contentful-paint']) {
+    agent.firstContentfulPaint = paintMarks['first-contentful-paint'];
+  }
+
+  return {
+    navigationTiming: marks,
+    agent: agent
+  };
+}
+
+function now() {
+  return window.performance.now();
+}
+
+function getTime(time) {
+  return typeof time === 'number' && time >= 0 ? time : now();
+}
+
+function getDuration(start, end) {
+  if (isUndefined(end) || isUndefined(start)) {
+    return null;
+  }
+
+  return parseFloat(end - start);
+}
+
+function scheduleMacroTask(callback) {
+  setTimeout(callback, 0);
+}
+
+function scheduleMicroTask(callback) {
+  es6Promise_1.resolve().then(callback);
+}
+
+var SCHEDULE = 'schedule';
+var INVOKE = 'invoke';
+var CLEAR = 'clear';
+var ADD_EVENT_LISTENER_STR = 'addEventListener';
+var REMOVE_EVENT_LISTENER_STR = 'removeEventListener';
+var RESOURCE_INITIATOR_TYPES = ['link', 'css', 'script', 'img', 'xmlhttprequest', 'fetch', 'beacon', 'iframe'];
+var REUSABILITY_THRESHOLD = 5000;
+var MAX_SPAN_DURATION = 5 * 60 * 1000;
+var PAGE_LOAD = 'page-load';
+var ROUTE_CHANGE = 'route-change';
+var TYPE_CUSTOM = 'custom';
+var HTTP_REQUEST_TYPE = 'http-request';
+var TEMPORARY_TYPE = 'temporary';
+var NAME_UNKNOWN = 'Unknown';
+var TRANSACTION_TYPE_ORDER = [PAGE_LOAD, ROUTE_CHANGE, HTTP_REQUEST_TYPE, TYPE_CUSTOM, TEMPORARY_TYPE];
+var USER_TIMING_THRESHOLD = 60;
+var TRANSACTION_START = 'transaction:start';
+var TRANSACTION_END = 'transaction:end';
+var CONFIG_CHANGE = 'config:change';
+var XMLHTTPREQUEST = 'xmlhttprequest';
+var FETCH = 'fetch';
+var HISTORY = 'history';
+var ERROR = 'error';
+var BEFORE_EVENT = ':before';
+var AFTER_EVENT = ':after';
+var LOCAL_CONFIG_KEY = 'elastic_apm_config';
+var KEYWORD_LIMIT = 1024;
+var SERVER_URL_PREFIX = '/intake/v2/rum/events';
+var BROWSER_RESPONSIVENESS_INTERVAL = 500;
+var BROWSER_RESPONSIVENESS_BUFFER = 3;
+var SIMILAR_SPAN_TO_TRANSACTION_RATIO = 0.05;
+
+var METADATA_MODEL = {
+  service: {
+    name: [KEYWORD_LIMIT, true],
+    version: true,
+    agent: {
+      version: [KEYWORD_LIMIT, true]
+    },
+    environment: true
+  }
+};
+var RESPONSE_MODEL = {
+  '*': true,
+  headers: {
+    '*': true
+  }
+};
+var DESTINATION_MODEL = {
+  address: [KEYWORD_LIMIT],
+  service: {
+    '*': [KEYWORD_LIMIT, true]
+  }
+};
+var CONTEXT_MODEL = {
+  user: {
+    id: true,
+    email: true,
+    username: true
+  },
+  tags: {
+    '*': true
+  },
+  http: {
+    response: RESPONSE_MODEL
+  },
+  destination: DESTINATION_MODEL,
+  response: RESPONSE_MODEL
+};
+var SPAN_MODEL = {
+  name: [KEYWORD_LIMIT, true],
+  type: [KEYWORD_LIMIT, true],
+  id: [KEYWORD_LIMIT, true],
+  trace_id: [KEYWORD_LIMIT, true],
+  parent_id: [KEYWORD_LIMIT, true],
+  transaction_id: [KEYWORD_LIMIT, true],
+  subtype: true,
+  action: true,
+  context: CONTEXT_MODEL
+};
+var TRANSACTION_MODEL = {
+  name: true,
+  parent_id: true,
+  type: [KEYWORD_LIMIT, true],
+  id: [KEYWORD_LIMIT, true],
+  trace_id: [KEYWORD_LIMIT, true],
+  span_count: {
+    started: [KEYWORD_LIMIT, true]
+  },
+  context: CONTEXT_MODEL
+};
+var ERROR_MODEL = {
+  id: [KEYWORD_LIMIT, true],
+  trace_id: true,
+  transaction_id: true,
+  parent_id: true,
+  culprit: true,
+  exception: {
+    type: true
+  },
+  transaction: {
+    type: true
+  },
+  context: CONTEXT_MODEL
+};
+
+function truncate(value, limit, required, placeholder) {
+  if (limit === void 0) {
+    limit = KEYWORD_LIMIT;
+  }
+
+  if (required === void 0) {
+    required = false;
+  }
+
+  if (placeholder === void 0) {
+    placeholder = 'N/A';
+  }
+
+  if (required && isEmpty(value)) {
+    value = placeholder;
+  }
+
+  if (typeof value === 'string') {
+    return value.substring(0, limit);
+  }
+
+  return value;
+}
+
+function isEmpty(value) {
+  return value == null || value === '' || typeof value === 'undefined';
+}
+
+function replaceValue(target, key, currModel) {
+  var value = truncate(target[key], currModel[0], currModel[1]);
+
+  if (isEmpty(value)) {
+    delete target[key];
+    return;
+  }
+
+  target[key] = value;
+}
+
+function truncateModel(model, target, childTarget) {
+  if (model === void 0) {
+    model = {};
+  }
+
+  if (childTarget === void 0) {
+    childTarget = target;
+  }
+
+  var keys = Object.keys(model);
+  var emptyArr = [];
+
+  var _loop = function _loop(i) {
+    var currKey = keys[i];
+    var currModel = model[currKey] === true ? emptyArr : model[currKey];
+
+    if (!Array.isArray(currModel)) {
+      truncateModel(currModel, target, childTarget[currKey]);
+    } else {
+      if (currKey === '*') {
+        Object.keys(childTarget).forEach(function (key) {
+          return replaceValue(childTarget, key, currModel);
+        });
+      } else {
+        replaceValue(childTarget, currKey, currModel);
+      }
+    }
+  };
+
+  for (var i = 0; i < keys.length; i++) {
+    _loop(i);
+  }
+
+  return target;
+}
+
+var ErrorLogging = function () {
+  function ErrorLogging(apmServer, configService, transactionService) {
+    this._apmServer = apmServer;
+    this._configService = configService;
+    this._transactionService = transactionService;
+  }
+
+  var _proto = ErrorLogging.prototype;
+
+  _proto.createErrorDataModel = function createErrorDataModel(errorEvent) {
+    var frames = createStackTraces(errorEvent);
+    var filteredFrames = filterInvalidFrames(frames);
+    var culprit = '(inline script)';
+    var lastFrame = filteredFrames[filteredFrames.length - 1];
+
+    if (lastFrame && lastFrame.filename) {
+      culprit = lastFrame.filename;
+    }
+
+    var message = errorEvent.message,
+        error = errorEvent.error;
+    var errorMessage = message;
+    var errorType = '';
+    var errorContext = {};
+
+    if (error && typeof error === 'object') {
+      errorMessage = errorMessage || error.message;
+      errorType = error.name;
+      errorContext = this._getErrorProperties(error);
+    }
+
+    if (!errorType) {
+      if (errorMessage && errorMessage.indexOf(':') > -1) {
+        errorType = errorMessage.split(':')[0];
+      }
+    }
+
+    var currentTransaction = this._transactionService.getCurrentTransaction();
+
+    var transactionContext = currentTransaction ? currentTransaction.context : {};
+
+    var configContext = this._configService.get('context');
+
+    var pageMetadata = getPageMetadata();
+    var context = merge({}, pageMetadata, transactionContext, configContext, errorContext);
+    var errorObject = {
+      id: generateRandomId(),
+      culprit: culprit,
+      exception: {
+        message: errorMessage,
+        stacktrace: filteredFrames,
+        type: errorType
+      },
+      context: context
+    };
+
+    if (currentTransaction) {
+      errorObject = extend(errorObject, {
+        trace_id: currentTransaction.traceId,
+        parent_id: currentTransaction.id,
+        transaction_id: currentTransaction.id,
+        transaction: {
+          type: currentTransaction.type,
+          sampled: currentTransaction.sampled
+        }
+      });
+    }
+
+    return truncateModel(ERROR_MODEL, errorObject);
+  };
+
+  _proto.logErrorEvent = function logErrorEvent(errorEvent, sendImmediately) {
+    if (typeof errorEvent === 'undefined') {
+      return;
+    }
+
+    var errorObject = this.createErrorDataModel(errorEvent);
+
+    if (typeof errorObject.exception.message === 'undefined') {
+      return;
+    }
+
+    if (sendImmediately) {
+      return this._apmServer.sendErrors([errorObject]);
+    } else {
+      return this._apmServer.addError(errorObject);
+    }
+  };
+
+  _proto.registerListeners = function registerListeners() {
+    var _this = this;
+
+    window.addEventListener('error', function (errorEvent) {
+      return _this.logErrorEvent(errorEvent);
+    });
+    window.addEventListener('unhandledrejection', function (promiseRejectionEvent) {
+      return _this.logPromiseEvent(promiseRejectionEvent);
+    });
+  };
+
+  _proto.logPromiseEvent = function logPromiseEvent(promiseRejectionEvent) {
+    var prefix = 'Unhandled promise rejection: ';
+    var reason = promiseRejectionEvent.reason;
+
+    if (reason == null) {
+      this.logError(prefix + '<no reason specified>');
+    } else if (typeof reason.message === 'string') {
+      this.logError({
+        message: prefix + reason.message,
+        stack: reason.stack ? reason.stack : null
+      });
+    } else if (typeof reason !== 'object') {
+      this.logError(prefix + reason);
+    }
+  };
+
+  _proto.logError = function logError(messageOrError) {
+    var errorEvent = {};
+
+    if (typeof messageOrError === 'string') {
+      errorEvent.message = messageOrError;
+    } else {
+      errorEvent.error = messageOrError;
+    }
+
+    return this.logErrorEvent(errorEvent);
+  };
+
+  _proto._getErrorProperties = function _getErrorProperties(error) {
+    var properties = {};
+    Object.keys(error).forEach(function (key) {
+      if (key === 'stack') return;
+      var val = error[key];
+      if (val === null) return;
+
+      switch (typeof val) {
+        case 'function':
+          return;
+
+        case 'object':
+          if (typeof val.toISOString !== 'function') return;
+          val = val.toISOString();
+      }
+
+      properties[key] = val;
+    });
+    return properties;
+  };
+
+  return ErrorLogging;
+}();
+
+var ErrorLogging$1 = {
+  ErrorLogging: ErrorLogging,
+  registerServices: function registerServices(serviceFactory) {
+    serviceFactory.registerServiceCreator('ErrorLogging', function () {
+      var apmService = serviceFactory.getService('ApmServer');
+      var configService = serviceFactory.getService('ConfigService');
+      var transactionService = serviceFactory.getService('TransactionService');
+      return new ErrorLogging(apmService, configService, transactionService);
+    });
+  }
+};
+
+function isDefaultPort(port, protocol) {
+  switch (protocol) {
+    case 'http:':
+      return port === '80';
+
+    case 'https:':
+      return port === '443';
+  }
+
+  return true;
+}
+
+var RULES = [['#', 'hash'], ['?', 'query'], ['/', 'path'], ['@', 'auth', 1], [NaN, 'host', undefined, 1]];
+var PROTOCOL_REGEX = /^([a-z][a-z0-9.+-]*:)?(\/\/)?([\S\s]*)/i;
+
+var Url = function () {
+  function Url(url) {
+    var _this$extractProtocol = this.extractProtocol(url || ''),
+        protocol = _this$extractProtocol.protocol,
+        address = _this$extractProtocol.address,
+        slashes = _this$extractProtocol.slashes;
+
+    var relative = !protocol && !slashes;
+    var location = this.getLocation();
+    var instructions = RULES.slice();
+    address = address.replace('\\', '/');
+
+    if (!slashes) {
+      instructions[2] = [NaN, 'path'];
+    }
+
+    var index;
+
+    for (var i = 0; i < instructions.length; i++) {
+      var instruction = instructions[i];
+      var parse = instruction[0];
+      var key = instruction[1];
+
+      if (typeof parse === 'string') {
+        index = address.indexOf(parse);
+
+        if (~index) {
+          var instLength = instruction[2];
+
+          if (instLength) {
+            var newIndex = address.lastIndexOf(parse);
+            index = Math.max(index, newIndex);
+            this[key] = address.slice(0, index);
+            address = address.slice(index + instLength);
+          } else {
+            this[key] = address.slice(index);
+            address = address.slice(0, index);
+          }
+        }
+      } else {
+        this[key] = address;
+        address = '';
+      }
+
+      this[key] = this[key] || (relative && instruction[3] ? location[key] || '' : '');
+      if (instruction[3]) this[key] = this[key].toLowerCase();
+    }
+
+    if (relative && this.path.charAt(0) !== '/') {
+      this.path = '/' + this.path;
+    }
+
+    this.relative = relative;
+    this.protocol = protocol || location.protocol;
+    this.hostname = this.host;
+    this.port = '';
+
+    if (/:\d+$/.test(this.host)) {
+      var value = this.host.split(':');
+      var port = value.pop();
+      var hostname = value.join(':');
+
+      if (isDefaultPort(port, this.protocol)) {
+        this.host = hostname;
+      } else {
+        this.port = port;
+      }
+
+      this.hostname = hostname;
+    }
+
+    this.origin = this.protocol && this.host && this.protocol !== 'file:' ? this.protocol + '//' + this.host : 'null';
+    this.href = this.toString();
+  }
+
+  var _proto = Url.prototype;
+
+  _proto.toString = function toString() {
+    var result = this.protocol;
+    result += '//';
+
+    if (this.auth) {
+      var REDACTED = '[REDACTED]';
+      var userpass = this.auth.split(':');
+      var username = userpass[0] ? REDACTED : '';
+      var password = userpass[1] ? ':' + REDACTED : '';
+      result += username + password + '@';
+    }
+
+    result += this.host;
+    result += this.path;
+    result += this.query;
+    result += this.hash;
+    return result;
+  };
+
+  _proto.getLocation = function getLocation() {
+    var globalVar = {};
+
+    if (typeof window !== 'undefined') {
+      globalVar = window;
+    }
+
+    return globalVar.location;
+  };
+
+  _proto.extractProtocol = function extractProtocol(url) {
+    var match = PROTOCOL_REGEX.exec(url);
+    return {
+      protocol: match[1] ? match[1].toLowerCase() : '',
+      slashes: !!match[2],
+      address: match[3]
+    };
+  };
+
+  return Url;
+}();
+
+var globalState = {
+  fetchInProgress: false
+};
+function apmSymbol(name) {
+  return '__apm_symbol__' + name;
+}
+
+function isPropertyWritable(propertyDesc) {
+  if (!propertyDesc) {
+    return true;
+  }
+
+  if (propertyDesc.writable === false) {
+    return false;
+  }
+
+  return !(typeof propertyDesc.get === 'function' && typeof propertyDesc.set === 'undefined');
+}
+
+function attachOriginToPatched(patched, original) {
+  patched[apmSymbol('OriginalDelegate')] = original;
+}
+
+function patchMethod(target, name, patchFn) {
+  var proto = target;
+
+  while (proto && !proto.hasOwnProperty(name)) {
+    proto = Object.getPrototypeOf(proto);
+  }
+
+  if (!proto && target[name]) {
+    proto = target;
+  }
+
+  var delegateName = apmSymbol(name);
+  var delegate;
+
+  if (proto && !(delegate = proto[delegateName])) {
+    delegate = proto[delegateName] = proto[name];
+    var desc = proto && Object.getOwnPropertyDescriptor(proto, name);
+
+    if (isPropertyWritable(desc)) {
+      var patchDelegate = patchFn(delegate, delegateName, name);
+
+      proto[name] = function () {
+        return patchDelegate(this, arguments);
+      };
+
+      attachOriginToPatched(proto[name], delegate);
+    }
+  }
+
+  return delegate;
+}
+var XHR_IGNORE = apmSymbol('xhrIgnore');
+var XHR_SYNC = apmSymbol('xhrSync');
+var XHR_URL = apmSymbol('xhrURL');
+var XHR_METHOD = apmSymbol('xhrMethod');
+
+var XHR_TASK = apmSymbol('xhrTask');
+var XHR_LISTENER = apmSymbol('xhrListener');
+var XHR_SCHEDULED = apmSymbol('xhrScheduled');
+function patchXMLHttpRequest(callback) {
+  var XMLHttpRequestPrototype = XMLHttpRequest.prototype;
+  var oriAddListener = XMLHttpRequestPrototype[ADD_EVENT_LISTENER_STR];
+  var oriRemoveListener = XMLHttpRequestPrototype[REMOVE_EVENT_LISTENER_STR];
+
+  if (!oriAddListener) {
+    var XMLHttpRequestEventTarget = window['XMLHttpRequestEventTarget'];
+
+    if (XMLHttpRequestEventTarget) {
+      var XMLHttpRequestEventTargetPrototype = XMLHttpRequestEventTarget.prototype;
+      oriAddListener = XMLHttpRequestEventTargetPrototype[ADD_EVENT_LISTENER_STR];
+      oriRemoveListener = XMLHttpRequestEventTargetPrototype[REMOVE_EVENT_LISTENER_STR];
+    }
+  }
+
+  var READY_STATE_CHANGE = 'readystatechange';
+  var LOAD = 'load';
+
+  function invokeTask(task) {
+    task.state = INVOKE;
+    callback(INVOKE, task);
+  }
+
+  function scheduleTask(task) {
+    XMLHttpRequest[XHR_SCHEDULED] = false;
+    task.state = SCHEDULE;
+    callback(SCHEDULE, task);
+    var _task$data = task.data,
+        aborted = _task$data.aborted,
+        target = _task$data.target;
+
+    if (!oriAddListener) {
+      oriAddListener = target[ADD_EVENT_LISTENER_STR];
+      oriRemoveListener = target[REMOVE_EVENT_LISTENER_STR];
+    }
+
+    var listener = target[XHR_LISTENER];
+
+    if (listener) {
+      oriRemoveListener.call(target, READY_STATE_CHANGE, listener);
+      oriRemoveListener.call(target, LOAD, listener);
+    }
+
+    var earlierEvent;
+
+    var newListener = target[XHR_LISTENER] = function (_ref) {
+      var type = _ref.type;
+
+      if (earlierEvent) {
+        if (earlierEvent != type) {
+          scheduleMacroTask(function () {
+            if (task.state !== INVOKE) {
+              invokeTask(task);
+            }
+          });
+        }
+      } else {
+        if (target.readyState === target.DONE) {
+          if (!aborted && XMLHttpRequest[XHR_SCHEDULED] && task.state === SCHEDULE) {
+            earlierEvent = type;
+          }
+        }
+      }
+    };
+
+    oriAddListener.call(target, READY_STATE_CHANGE, newListener);
+    oriAddListener.call(target, LOAD, newListener);
+    var storedTask = target[XHR_TASK];
+
+    if (!storedTask) {
+      target[XHR_TASK] = task;
+    }
+  }
+
+  function clearTask(task) {
+    task.state = CLEAR;
+    callback(CLEAR, task);
+    var data = task.data;
+    data.aborted = true;
+  }
+
+  var openNative = patchMethod(XMLHttpRequestPrototype, 'open', function () {
+    return function (self, args) {
+      if (!self[XHR_IGNORE]) {
+        self[XHR_METHOD] = args[0];
+        self[XHR_URL] = args[1];
+        self[XHR_SYNC] = args[2] === false;
+      }
+
+      return openNative.apply(self, args);
+    };
+  });
+  var sendNative = patchMethod(XMLHttpRequestPrototype, 'send', function () {
+    return function (self, args) {
+      if (self[XHR_IGNORE]) {
+        return sendNative.apply(self, args);
+      }
+
+      var task = {
+        source: XMLHTTPREQUEST,
+        state: '',
+        type: 'macroTask',
+        data: {
+          target: self,
+          method: self[XHR_METHOD],
+          sync: self[XHR_SYNC],
+          url: self[XHR_URL],
+          aborted: false
+        }
+      };
+      scheduleTask(task);
+      var result = sendNative.apply(self, args);
+      XMLHttpRequest[XHR_SCHEDULED] = true;
+
+      if (self[XHR_SYNC]) {
+        invokeTask(task);
+      }
+
+      return result;
+    };
+  });
+  var abortNative = patchMethod(XMLHttpRequestPrototype, 'abort', function () {
+    return function (self, args) {
+      if (!self[XHR_IGNORE]) {
+        var task = self[XHR_TASK];
+
+        if (task && typeof task.type === 'string') {
+          if (task.data && task.data.aborted) {
+            return;
+          }
+
+          clearTask(task);
+        }
+      }
+
+      return abortNative.apply(self, args);
+    };
+  });
+}
+
 function patchFetch(callback) {
   if (!window.fetch || !window.Request) {
     return;
@@ -2613,7 +2691,6 @@ function patchFetch(callback) {
         method: request.method,
         sync: false,
         url: url,
-        args: args,
         aborted: false
       }
     };
@@ -2634,13 +2711,13 @@ function patchFetch(callback) {
 
       promise.then(function (response) {
         resolve(response);
-        es6Promise_1.resolve().then(function () {
+        scheduleMicroTask(function () {
           task.data.response = response;
           invokeTask(task);
         });
       }, function (error) {
         reject(error);
-        es6Promise_1.resolve().then(function () {
+        scheduleMicroTask(function () {
           task.data.error = error;
           invokeTask(task);
         });
@@ -2764,8 +2841,6 @@ var PerformanceMonitoring = function () {
 
       if (payload) {
         _this._apmServer.addTransaction(payload);
-      } else {
-        _this._logginService.debug('Could not create a payload from the Transaction', tr);
       }
     });
 
@@ -2819,8 +2894,16 @@ var PerformanceMonitoring = function () {
     var transactionService = this._transactionService;
 
     if (event === SCHEDULE && task.data) {
-      var requestUrl = new Url(task.data.url);
-      var spanName = task.data.method + ' ' + (requestUrl.relative ? requestUrl.path : stripQueryStringFromUrl(requestUrl.href));
+      var data = task.data;
+      var requestUrl = new Url(data.url);
+      var spanName = data.method + ' ' + (requestUrl.relative ? requestUrl.path : stripQueryStringFromUrl(requestUrl.href));
+
+      if (!transactionService.getCurrentTransaction()) {
+        transactionService.startTransaction(spanName, HTTP_REQUEST_TYPE, {
+          managed: true
+        });
+      }
+
       var span = transactionService.startSpan(spanName, 'external.http');
       var taskId = transactionService.addTask();
 
@@ -2832,51 +2915,30 @@ var PerformanceMonitoring = function () {
       var dtOrigins = configService.get('distributedTracingOrigins');
       var currentUrl = new Url(window.location.href);
       var isSameOrigin = checkSameOrigin(requestUrl.origin, currentUrl.origin) || checkSameOrigin(requestUrl.origin, dtOrigins);
-      var target = task.data.target;
+      var target = data.target;
 
       if (isDtEnabled && isSameOrigin && target) {
         this.injectDtHeader(span, target);
       }
 
-      span.addContext({
-        http: {
-          method: task.data.method,
-          url: requestUrl.href
-        }
-      });
-      span.sync = task.data.sync;
-      task.data.span = span;
+      span.sync = data.sync;
+      data.span = span;
       task.id = taskId;
-    }
-
-    if (event === INVOKE && task.data && task.data.span) {
-      if (typeof task.data.target.status !== 'undefined') {
-        task.data.span.addContext({
-          http: {
-            status_code: task.data.target.status
-          }
-        });
-      } else if (task.data.response) {
-        task.data.span.addContext({
-          http: {
-            status_code: task.data.response.status
-          }
-        });
+    } else if (event === INVOKE) {
+      if (task.data && task.data.span) {
+        task.data.span.end(null, task.data);
       }
 
-      task.data.span.end();
-    }
-
-    if (event === INVOKE && task.id) {
-      transactionService.removeTask(task.id);
+      if (task.id) {
+        transactionService.removeTask(task.id);
+      }
     }
   };
 
   _proto.injectDtHeader = function injectDtHeader(span, target) {
     var configService = this._configService;
     var headerName = configService.get('distributedTracingHeaderName');
-    var headerValueCallback = configService.get('distributedTracingHeaderValueCallback');
-    var headerValue = headerValueCallback(span);
+    var headerValue = getDtHeaderValue(span);
     var isHeaderValid = isDtHeaderValid(headerValue);
 
     if (headerName && headerValue && isHeaderValid) {
@@ -2899,14 +2961,6 @@ var PerformanceMonitoring = function () {
     }
   };
 
-  _proto.setTransactionContext = function setTransactionContext(transaction) {
-    var context = this._configService.get('context');
-
-    if (context) {
-      transaction.addContext(context);
-    }
-  };
-
   _proto.filterTransaction = function filterTransaction(tr) {
     var transactionDurationThreshold = this._configService.get('transactionDurationThreshold');
 
@@ -2914,7 +2968,7 @@ var PerformanceMonitoring = function () {
 
     if (!duration) {
       {
-        var message = 'Transaction was discarded! ';
+        var message = "transaction(" + tr.id + ", " + tr.name + ") was discarded! ";
 
         if (duration === 0) {
           message += "Transaction duration is 0";
@@ -2930,15 +2984,7 @@ var PerformanceMonitoring = function () {
 
     if (duration > transactionDurationThreshold) {
       {
-        this._logginService.debug("Transaction was discarded! Transaction duration (" + duration + ") is greater than the transactionDurationThreshold configuration (" + transactionDurationThreshold + ")");
-      }
-
-      return false;
-    }
-
-    if (tr.spans.length === 0) {
-      {
-        this._logginService.debug("Transaction was discarded! Transaction does not include any spans");
+        this._logginService.debug("transaction(" + tr.id + ", " + tr.name + ") was discarded! Transaction duration (" + duration + ") is greater than the transactionDurationThreshold configuration (" + transactionDurationThreshold + ")");
       }
 
       return false;
@@ -2948,18 +2994,12 @@ var PerformanceMonitoring = function () {
       tr.resetSpans();
     }
 
-    var browserResponsivenessInterval = this._configService.get('browserResponsivenessInterval');
-
-    var checkBrowserResponsiveness = this._configService.get('checkBrowserResponsiveness');
-
-    if (checkBrowserResponsiveness && tr.options.checkBrowserResponsiveness) {
-      var buffer = this._configService.get('browserResponsivenessBuffer');
-
-      var wasBrowserResponsive = this.checkBrowserResponsiveness(tr, browserResponsivenessInterval, buffer);
+    if (tr.options.checkBrowserResponsiveness) {
+      var wasBrowserResponsive = this.checkBrowserResponsiveness(tr, BROWSER_RESPONSIVENESS_INTERVAL, BROWSER_RESPONSIVENESS_BUFFER);
 
       if (!wasBrowserResponsive) {
         {
-          this._logginService.debug('Transaction was discarded! Browser was not responsive enough during the transaction.', ' duration:', duration, ' browserResponsivenessCounter:', tr.browserResponsivenessCounter, 'interval:', browserResponsivenessInterval);
+          this._logginService.debug("transaction(" + tr.id + ", " + tr.name + ") was discarded! Browser was not responsive enough during the transaction.", ' duration:', duration, ' browserResponsivenessCounter:', tr.browserResponsivenessCounter);
         }
 
         return false;
@@ -2969,56 +3009,21 @@ var PerformanceMonitoring = function () {
     return true;
   };
 
-  _proto.adjustTransactionTime = function adjustTransactionTime(transaction) {
-    var spans = transaction.spans;
-    var earliestSpan = getEarliestSpan(spans);
-
-    if (earliestSpan && earliestSpan._start < transaction._start) {
-      transaction._start = earliestSpan._start;
-    }
-
-    var latestSpan = getLatestNonXHRSpan(spans);
-
-    if (latestSpan && latestSpan._end > transaction._end) {
-      transaction._end = latestSpan._end;
-    }
-
-    var transactionEnd = transaction._end;
-
-    for (var i = 0; i < spans.length; i++) {
-      var span = spans[i];
-
-      if (span._end > transactionEnd) {
-        span._end = transactionEnd;
-        span.type += '.truncated';
-      }
-
-      if (span._start > transactionEnd) {
-        span._start = transactionEnd;
-      }
-    }
-  };
-
   _proto.prepareTransaction = function prepareTransaction(transaction) {
     transaction.spans.sort(function (spanA, spanB) {
       return spanA._start - spanB._start;
     });
 
     if (this._configService.get('groupSimilarSpans')) {
-      var similarSpanThreshold = this._configService.get('similarSpanThreshold');
-
-      transaction.spans = this.groupSmallContinuouslySimilarSpans(transaction, similarSpanThreshold);
+      transaction.spans = this.groupSmallContinuouslySimilarSpans(transaction, SIMILAR_SPAN_TO_TRANSACTION_RATIO);
     }
 
     transaction.spans = transaction.spans.filter(function (span) {
       return span.duration() > 0 && span._start >= transaction._start && span._end <= transaction._end;
     });
-    this.setTransactionContext(transaction);
   };
 
   _proto.createTransactionDataModel = function createTransactionDataModel(transaction) {
-    var configContext = this._configService.get('context');
-
     var transactionStart = transaction._start;
     var spans = transaction.spans.map(function (span) {
       var spanData = {
@@ -3037,7 +3042,6 @@ var PerformanceMonitoring = function () {
       };
       return truncateModel(SPAN_MODEL, spanData);
     });
-    var context = merge({}, configContext, transaction.context);
     var transactionData = {
       id: transaction.id,
       trace_id: transaction.traceId,
@@ -3045,7 +3049,7 @@ var PerformanceMonitoring = function () {
       type: transaction.type,
       duration: transaction.duration(),
       spans: spans,
-      context: context,
+      context: transaction.context,
       marks: transaction.marks,
       breakdown: transaction.breakdownTimings,
       span_count: {
@@ -3057,7 +3061,6 @@ var PerformanceMonitoring = function () {
   };
 
   _proto.createTransactionPayload = function createTransactionPayload(transaction) {
-    this.adjustTransactionTime(transaction);
     this.prepareTransaction(transaction);
     var filtered = this.filterTransaction(transaction);
 
@@ -3106,15 +3109,9 @@ var PerformanceMonitoring = function () {
 
   _proto.checkBrowserResponsiveness = function checkBrowserResponsiveness(transaction, interval, buffer) {
     var counter = transaction.browserResponsivenessCounter;
-
-    if (typeof interval === 'undefined' || typeof counter === 'undefined') {
-      return true;
-    }
-
     var duration = transaction.duration();
     var expectedCount = Math.floor(duration / interval);
-    var wasBrowserResponsive = counter + buffer >= expectedCount;
-    return wasBrowserResponsive;
+    return counter + buffer >= expectedCount;
   };
 
   return PerformanceMonitoring;
@@ -3141,7 +3138,7 @@ var SpanBase = function () {
     this.traceId = options.traceId;
     this.sampled = options.sampled;
     this.timestamp = options.timestamp;
-    this._start = now();
+    this._start = getTime(options.startTime);
     this._end = undefined;
     this.ended = false;
     this.onEnd = options.onEnd;
@@ -3174,19 +3171,23 @@ var SpanBase = function () {
     });
   };
 
-  _proto.addContext = function addContext(context) {
-    if (!context) return;
+  _proto.addContext = function addContext() {
+    for (var _len = arguments.length, context = new Array(_len), _key = 0; _key < _len; _key++) {
+      context[_key] = arguments[_key];
+    }
+
+    if (context.length === 0) return;
     this.ensureContext();
-    merge(this.context, context);
+    merge.apply(void 0, [this.context].concat(context));
   };
 
-  _proto.end = function end() {
+  _proto.end = function end(endTime) {
     if (this.ended) {
       return;
     }
 
     this.ended = true;
-    this._end = now();
+    this._end = getTime(endTime);
     this.callOnEnd();
   };
 
@@ -3202,6 +3203,141 @@ var SpanBase = function () {
 
   return SpanBase;
 }();
+
+var LEFT_SQUARE_BRACKET = 91;
+var RIGHT_SQUARE_BRACKET = 93;
+var EXTERNAL = 'external';
+var RESOURCE = 'resource';
+
+function getPortNumber(port, protocol) {
+  if (port === '') {
+    port = protocol === 'http:' ? '80' : protocol === 'https:' ? '443' : '';
+  }
+
+  return port;
+}
+
+function getResponseContext(perfTimingEntry) {
+  var transferSize = perfTimingEntry.transferSize,
+      encodedBodySize = perfTimingEntry.encodedBodySize,
+      decodedBodySize = perfTimingEntry.decodedBodySize,
+      serverTiming = perfTimingEntry.serverTiming;
+  var respContext = {
+    transfer_size: transferSize,
+    encoded_body_size: encodedBodySize,
+    decoded_body_size: decodedBodySize
+  };
+  var serverTimingStr = getServerTimingInfo(serverTiming);
+
+  if (serverTimingStr) {
+    respContext.headers = {
+      'server-timing': serverTimingStr
+    };
+  }
+
+  return respContext;
+}
+
+function getDestination(parsedUrl, type) {
+  var port = parsedUrl.port,
+      protocol = parsedUrl.protocol,
+      hostname = parsedUrl.hostname,
+      host = parsedUrl.host;
+  var portNumber = getPortNumber(port, protocol);
+  var ipv6Hostname = hostname.charCodeAt(0) === LEFT_SQUARE_BRACKET && hostname.charCodeAt(hostname.length - 1) === RIGHT_SQUARE_BRACKET;
+  var address = hostname;
+
+  if (ipv6Hostname) {
+    address = hostname.slice(1, -1);
+  }
+
+  return {
+    service: {
+      name: protocol + '//' + host,
+      resource: hostname + ':' + portNumber,
+      type: type
+    },
+    address: address,
+    port: Number(portNumber)
+  };
+}
+
+function getResourceContext(data) {
+  var entry = data.entry,
+      url = data.url;
+  var parsedUrl = new Url(url);
+  var destination = getDestination(parsedUrl, RESOURCE);
+  return {
+    http: {
+      url: url,
+      response: getResponseContext(entry)
+    },
+    destination: destination
+  };
+}
+
+function getExternalContext(data) {
+  var url = data.url,
+      method = data.method,
+      target = data.target,
+      response = data.response;
+  var parsedUrl = new Url(url);
+  var destination = getDestination(parsedUrl, EXTERNAL);
+  var context = {
+    http: {
+      method: method,
+      url: parsedUrl.href
+    },
+    destination: destination
+  };
+  var statusCode;
+
+  if (target && typeof target.status !== 'undefined') {
+    statusCode = target.status;
+  } else if (response) {
+    statusCode = response.status;
+  }
+
+  context.http.status_code = statusCode;
+  return context;
+}
+
+function addSpanContext(span, data) {
+  if (!data) {
+    return;
+  }
+
+  var type = span.type;
+  var context;
+
+  switch (type) {
+    case EXTERNAL:
+      context = getExternalContext(data);
+      break;
+
+    case RESOURCE:
+      context = getResourceContext(data);
+      break;
+  }
+
+  span.addContext(context);
+}
+function addTransactionContext(transaction, configContext) {
+  var pageContext = getPageMetadata();
+  var responseContext = {};
+
+  if (transaction.type === PAGE_LOAD && typeof performance.getEntriesByType === 'function') {
+    var entries = performance.getEntriesByType('navigation');
+
+    if (entries && entries.length > 0) {
+      responseContext = {
+        response: getResponseContext(entries[0])
+      };
+    }
+  }
+
+  transaction.addContext(pageContext, responseContext, configContext);
+}
 
 function _inheritsLoose(subClass, superClass) { subClass.prototype = Object.create(superClass.prototype); subClass.prototype.constructor = subClass; subClass.__proto__ = superClass; }
 
@@ -3228,10 +3364,18 @@ var Span = function (_SpanBase) {
     return _this;
   }
 
+  var _proto = Span.prototype;
+
+  _proto.end = function end(endTime, data) {
+    _SpanBase.prototype.end.call(this, endTime);
+
+    addSpanContext(this, data);
+  };
+
   return Span;
 }(SpanBase);
 
-var pageLoadBreakdowns = [['fetchStart', 'responseEnd', 'Network'], ['domLoading', 'domInteractive', 'DOM Processing'], ['domInteractive', 'loadEventEnd', 'Page Render']];
+var pageLoadBreakdowns = [['domainLookupStart', 'domainLookupEnd', 'DNS'], ['connectStart', 'connectEnd', 'TCP'], ['requestStart', 'responseStart', 'Request'], ['responseStart', 'responseEnd', 'Response'], ['domLoading', 'domComplete', 'Processing'], ['loadEventStart', 'loadEventEnd', 'Load']];
 
 function getValue(value) {
   return {
@@ -3239,9 +3383,47 @@ function getValue(value) {
   };
 }
 
+function calculateSelfTime(transaction) {
+  var spans = transaction.spans,
+      _start = transaction._start,
+      _end = transaction._end;
+
+  if (spans.length === 0) {
+    return transaction.duration();
+  }
+
+  spans.sort(function (span1, span2) {
+    return span1._start - span2._start;
+  });
+  var span = spans[0];
+  var spanEnd = span._end;
+  var spanStart = span._start;
+  var lastContinuousEnd = spanEnd;
+  var selfTime = spanStart - _start;
+
+  for (var i = 1; i < spans.length; i++) {
+    span = spans[i];
+    spanStart = span._start;
+    spanEnd = span._end;
+
+    if (spanStart > lastContinuousEnd) {
+      selfTime += spanStart - lastContinuousEnd;
+      lastContinuousEnd = spanEnd;
+    } else if (spanEnd > lastContinuousEnd) {
+      lastContinuousEnd = spanEnd;
+    }
+  }
+
+  if (lastContinuousEnd < _end) {
+    selfTime += _end - lastContinuousEnd;
+  }
+
+  return selfTime;
+}
+
 function groupSpans(transaction) {
   var spanMap = {};
-  var transactionSelfTime = transaction.selfTime;
+  var transactionSelfTime = calculateSelfTime(transaction);
   spanMap['app'] = {
     count: 1,
     duration: transactionSelfTime
@@ -3250,14 +3432,14 @@ function groupSpans(transaction) {
 
   for (var i = 0; i < spans.length; i++) {
     var span = spans[i];
-    var type = span.type,
-        subType = span.subType;
     var duration = span.duration();
 
     if (duration === 0 || duration == null) {
       continue;
     }
 
+    var type = span.type,
+        subType = span.subType;
     var key = type;
 
     if (subType) {
@@ -3378,11 +3560,9 @@ var Transaction = function (_SpanBase) {
     _this.nextAutoTaskId = 1;
     _this._scheduledTasks = [];
     _this.captureTimings = false;
-    _this.selfTime = null;
     _this.breakdownTimings = [];
-    _this.childStart = 0;
-    _this.childDuration = 0;
     _this.sampled = Math.random() <= _this.options.transactionSampleRate;
+    _this.browserResponsivenessCounter = 0;
     return _this;
   }
 
@@ -3448,12 +3628,6 @@ var Transaction = function (_SpanBase) {
 
     var span = new Span(name, type, opts);
     this._activeSpans[span.id] = span;
-    var activeChildren = Object.keys(this._activeSpans).length;
-
-    if (activeChildren === 1) {
-      this.childStart = span._start;
-    }
-
     return span;
   };
 
@@ -3465,23 +3639,20 @@ var Transaction = function (_SpanBase) {
     if (this.isFinished()) this.end();
   };
 
-  _proto.end = function end() {
+  _proto.end = function end(endTime) {
     if (this.ended) {
       return;
     }
 
     this.ended = true;
-    this._end = now();
+    this._end = getTime(endTime);
 
     for (var sid in this._activeSpans) {
       var span = this._activeSpans[sid];
       span.type = span.type + '.truncated';
-      span.end();
+      span.end(endTime);
     }
 
-    this.selfTime = this.duration() - this.childDuration;
-    var metadata = getPageMetadata();
-    this.addContext(metadata);
     this.callOnEnd();
   };
 
@@ -3518,12 +3689,6 @@ var Transaction = function (_SpanBase) {
   _proto._onSpanEnd = function _onSpanEnd(span) {
     this.spans.push(span);
     delete this._activeSpans[span.id];
-    var activeChildren = Object.keys(this._activeSpans).length;
-
-    if (activeChildren === 0) {
-      this.childDuration += span._end - this.childStart;
-      this.childStart = 0;
-    }
   };
 
   return Transaction;
@@ -3537,27 +3702,6 @@ function shouldCreateSpan(start, end, trStart, trEnd, baseTime) {
   }
 
   return typeof start === 'number' && typeof end === 'number' && start >= baseTime && end > start && start - baseTime >= trStart && end - baseTime <= trEnd && end - start < MAX_SPAN_DURATION && start - baseTime < MAX_SPAN_DURATION && end - baseTime < MAX_SPAN_DURATION;
-}
-
-function getResponseContext(perfTimingEntry) {
-  var transferSize = perfTimingEntry.transferSize,
-      encodedBodySize = perfTimingEntry.encodedBodySize,
-      decodedBodySize = perfTimingEntry.decodedBodySize,
-      serverTiming = perfTimingEntry.serverTiming;
-  var respContext = {
-    transfer_size: transferSize,
-    encoded_body_size: encodedBodySize,
-    decoded_body_size: decodedBodySize
-  };
-  var serverTimingStr = getServerTimingInfo(serverTiming);
-
-  if (serverTimingStr) {
-    respContext.headers = {
-      'server-timing': serverTimingStr
-    };
-  }
-
-  return respContext;
 }
 
 function createNavigationTimingSpans(timings, baseTime, trStart, trEnd) {
@@ -3578,8 +3722,7 @@ function createNavigationTimingSpans(timings, baseTime, trStart, trEnd) {
     }
 
     span._start = start - baseTime;
-    span.ended = true;
-    span._end = end - baseTime;
+    span.end(end - baseTime);
     spans.push(span);
   }
 
@@ -3599,15 +3742,11 @@ function createResourceTimingSpan(resourceTimingEntry) {
 
   var spanName = stripQueryStringFromUrl(name);
   var span = new Span(spanName, kind);
-  span.addContext({
-    http: {
-      url: name,
-      response: getResponseContext(resourceTimingEntry)
-    }
-  });
   span._start = startTime;
-  span.end();
-  span._end = responseEnd;
+  span.end(responseEnd, {
+    url: name,
+    entry: resourceTimingEntry
+  });
   return span;
 }
 
@@ -3673,8 +3812,7 @@ function createUserTimingSpans(entries, trStart, trEnd) {
     var kind = 'app';
     var span = new Span(name, kind);
     span._start = startTime;
-    span.end();
-    span._end = end;
+    span.end(end);
     userTimingSpans.push(span);
   }
 
@@ -3741,47 +3879,30 @@ function captureNavigation(transaction) {
     createUserTimingSpans(userEntries, _trStart, trEnd).forEach(function (span) {
       return transaction.spans.push(span);
     });
-
-    if (transaction.type === PAGE_LOAD) {
-      var navigationEntry = perf.getEntriesByType('navigation');
-
-      if (navigationEntry && navigationEntry.length > 0) {
-        navigationEntry = navigationEntry[0];
-        transaction.addContext({
-          response: getResponseContext(navigationEntry)
-        });
-      }
-    }
   }
 }
 
 var TransactionService = function () {
   function TransactionService(logger, config) {
-    if ( typeof config === 'undefined') {
-      logger.debug('TransactionService: config is not provided');
-    }
-
     this._config = config;
     this._logger = logger;
     this.currentTransaction = undefined;
+    this.respIntervalId = undefined;
   }
 
   var _proto = TransactionService.prototype;
 
-  _proto.ensureCurrentTransaction = function ensureCurrentTransaction(options) {
-    if (!options) {
-      options = this.createOptions();
-    }
-
+  _proto.ensureCurrentTransaction = function ensureCurrentTransaction(name, type, options) {
     var tr = this.getCurrentTransaction();
 
     if (tr) {
       return tr;
     } else {
-      options.canReuse = true;
-      options.managed = true;
-      return this.createTransaction(undefined, undefined, options);
+      tr = new Transaction(name, type, options);
+      this.setCurrentTransaction(tr);
     }
+
+    return tr;
   };
 
   _proto.getCurrentTransaction = function getCurrentTransaction() {
@@ -3794,37 +3915,29 @@ var TransactionService = function () {
     this.currentTransaction = value;
   };
 
-  _proto.createTransaction = function createTransaction(name, type, options) {
-    var tr = new Transaction(name, type, options);
-    this.setCurrentTransaction(tr);
+  _proto.ensureRespInterval = function ensureRespInterval(checkBrowserResponsiveness) {
+    var _this = this;
 
-    if (options.checkBrowserResponsiveness) {
-      this.startCounter(tr);
-    }
+    var clearRespInterval = function clearRespInterval() {
+      clearInterval(_this.respIntervalId);
+      _this.respIntervalId = undefined;
+    };
 
-    return tr;
-  };
+    if (checkBrowserResponsiveness) {
+      if (typeof this.respIntervalId === 'undefined') {
+        this.respIntervalId = setInterval(function () {
+          var tr = _this.getCurrentTransaction();
 
-  _proto.startCounter = function startCounter(transaction) {
-    transaction.browserResponsivenessCounter = 0;
-
-    var interval = this._config.get('browserResponsivenessInterval');
-
-    if (typeof interval === 'undefined') {
-      {
-        this._logger.debug('browserResponsivenessInterval is undefined!');
+          if (tr) {
+            tr.browserResponsivenessCounter++;
+          } else {
+            clearRespInterval();
+          }
+        }, BROWSER_RESPONSIVENESS_INTERVAL);
       }
-
-      return;
+    } else if (typeof this.respIntervalId !== 'undefined') {
+      clearRespInterval();
     }
-
-    var id = setInterval(function () {
-      if (transaction.ended) {
-        window.clearInterval(id);
-      } else {
-        transaction.browserResponsivenessCounter++;
-      }
-    }, interval);
   };
 
   _proto.createOptions = function createOptions(options) {
@@ -3851,25 +3964,33 @@ var TransactionService = function () {
     var tr = this.getCurrentTransaction();
 
     if (!tr) {
-      tr = this.createTransaction(name, type, perfOptions);
+      tr = this.ensureCurrentTransaction(name, type, perfOptions);
     } else if (tr.canReuse() && perfOptions.canReuse) {
       {
-        this._logger.debug('Redefining the current transaction', tr, name, type, perfOptions);
+        this._logger.debug("redefining transaction(" + tr.id + ", " + tr.name + ", " + tr.type + ")", 'to', "(" + name + ", " + type + ")", tr);
       }
 
-      tr.redefine(name, undefined, perfOptions);
+      var redefineType;
+      var currentTypeOrder = TRANSACTION_TYPE_ORDER.indexOf(tr.type);
+      var redefineTypeOrder = TRANSACTION_TYPE_ORDER.indexOf(type);
+
+      if (currentTypeOrder !== -1 && redefineTypeOrder !== -1 && redefineTypeOrder < currentTypeOrder) {
+        redefineType = type;
+      }
+
+      tr.redefine(name, redefineType, perfOptions);
     } else {
       {
-        this._logger.debug('Ending old transaction', tr);
+        this._logger.debug("ending previous transaction(" + tr.id + ", " + tr.name + ")", tr);
       }
 
       tr.end();
-      tr = this.createTransaction(name, type, perfOptions);
+      tr = this.ensureCurrentTransaction(name, type, perfOptions);
     }
 
     tr.captureTimings = true;
 
-    if (type === PAGE_LOAD) {
+    if (tr.type === PAGE_LOAD) {
       tr.options.checkBrowserResponsiveness = false;
 
       if (perfOptions.pageLoadTraceId) {
@@ -3885,11 +4006,12 @@ var TransactionService = function () {
       }
     }
 
+    this.ensureRespInterval(tr.options.checkBrowserResponsiveness);
     return tr;
   };
 
   _proto.startTransaction = function startTransaction(name, type, options) {
-    var _this = this;
+    var _this2 = this;
 
     var perfOptions = this.createOptions(options);
     var tr;
@@ -3901,11 +4023,11 @@ var TransactionService = function () {
     }
 
     tr.onEnd = function () {
-      return _this.handleTransactionEnd(tr);
+      return _this2.handleTransactionEnd(tr);
     };
 
     {
-      this._logger.debug('TransactionService.startTransaction', tr);
+      this._logger.debug("startTransaction(" + tr.id + ", " + tr.name + ", " + tr.type + ")");
     }
 
     this._config.events.send(TRANSACTION_START, [tr]);
@@ -3914,39 +4036,82 @@ var TransactionService = function () {
   };
 
   _proto.handleTransactionEnd = function handleTransactionEnd(tr) {
-    var _this2 = this;
+    var _this3 = this;
 
     return es6Promise_1.resolve().then(function () {
-      {
-        _this2._logger.debug('TransactionService transaction finished', tr);
-      }
+      var name = tr.name,
+          type = tr.type;
 
-      if (_this2.shouldIgnoreTransaction(tr.name)) {
+      if (_this3.shouldIgnoreTransaction(name) || type === TEMPORARY_TYPE) {
+        {
+          _this3._logger.debug("transaction(" + tr.id + ", " + name + ", " + type + ") is ignored");
+        }
+
         return;
       }
 
-      var breakdownMetrics = _this2._config.get('breakdownMetrics');
+      if (type === PAGE_LOAD) {
+        var pageLoadTransactionName = _this3._config.get('pageLoadTransactionName');
 
-      if (breakdownMetrics) {
-        tr.captureBreakdown();
-      }
-
-      if (tr.type === PAGE_LOAD) {
-        var pageLoadTransactionName = _this2._config.get('pageLoadTransactionName');
-
-        if (tr.name === NAME_UNKNOWN && pageLoadTransactionName) {
+        if (name === NAME_UNKNOWN && pageLoadTransactionName) {
           tr.name = pageLoadTransactionName;
         }
       }
 
       captureNavigation(tr);
 
-      _this2.add(tr);
+      _this3.adjustTransactionTime(tr);
+
+      var breakdownMetrics = _this3._config.get('breakdownMetrics');
+
+      if (breakdownMetrics) {
+        tr.captureBreakdown();
+      }
+
+      var configContext = _this3._config.get('context');
+
+      addTransactionContext(tr, configContext);
+
+      _this3._config.events.send(TRANSACTION_END, [tr]);
+
+      {
+        _this3._logger.debug("end transaction(" + tr.id + ", " + tr.name + ")", tr);
+      }
     }, function (err) {
       {
-        _this2._logger.debug('TransactionService transaction onEnd', err);
+        _this3._logger.debug("error ending transaction(" + tr.id + ", " + tr.name + ")", err);
       }
     });
+  };
+
+  _proto.adjustTransactionTime = function adjustTransactionTime(transaction) {
+    var spans = transaction.spans;
+    var earliestSpan = getEarliestSpan(spans);
+
+    if (earliestSpan && earliestSpan._start < transaction._start) {
+      transaction._start = earliestSpan._start;
+    }
+
+    var latestSpan = getLatestNonXHRSpan(spans);
+
+    if (latestSpan && latestSpan._end > transaction._end) {
+      transaction._end = latestSpan._end;
+    }
+
+    var transactionEnd = transaction._end;
+
+    for (var i = 0; i < spans.length; i++) {
+      var span = spans[i];
+
+      if (span._end > transactionEnd) {
+        span._end = transactionEnd;
+        span.type += '.truncated';
+      }
+
+      if (span._start > transactionEnd) {
+        span._start = transactionEnd;
+      }
+    }
   };
 
   _proto.shouldIgnoreTransaction = function shouldIgnoreTransaction(transactionName) {
@@ -3970,34 +4135,33 @@ var TransactionService = function () {
   };
 
   _proto.startSpan = function startSpan(name, type, options) {
-    var trans = this.ensureCurrentTransaction();
+    var tr = this.ensureCurrentTransaction(undefined, TEMPORARY_TYPE, this.createOptions({
+      canReuse: true,
+      managed: true
+    }));
 
-    if (trans) {
+    if (tr) {
+      var span = tr.startSpan(name, type, options);
+
       {
-        this._logger.debug('TransactionService.startSpan', name, type);
+        this._logger.debug("startSpan(" + name + ", " + type + ")", "on transaction(" + tr.id + ", " + tr.name + ")");
       }
 
-      var span = trans.startSpan(name, type, options);
       return span;
     }
   };
 
-  _proto.add = function add(transaction) {
-    this._config.events.send(TRANSACTION_END, [transaction]);
-
-    {
-      this._logger.debug('TransactionService.add', transaction);
-    }
-  };
-
   _proto.addTask = function addTask(taskId) {
-    var tr = this.ensureCurrentTransaction();
+    var tr = this.ensureCurrentTransaction(undefined, TEMPORARY_TYPE, this.createOptions({
+      canReuse: true,
+      managed: true
+    }));
 
     if (tr) {
       var taskId = tr.addTask(taskId);
 
       {
-        this._logger.debug('TransactionService.addTask', taskId);
+        this._logger.debug("addTask(" + taskId + ")", "on transaction(" + tr.id + ", " + tr.name + ")");
       }
     }
 
@@ -4011,7 +4175,7 @@ var TransactionService = function () {
       tr.removeTask(taskId);
 
       {
-        this._logger.debug('TransactionService.removeTask', taskId);
+        this._logger.debug("removeTask(" + taskId + ")", "on transaction(" + tr.id + ", " + tr.name + ")");
       }
     }
   };
@@ -4132,8 +4296,6 @@ var NDJSON = function () {
   return NDJSON;
 }();
 
-function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
-
 var ApmServer = function () {
   function ApmServer(configService, loggingService) {
     this._configService = configService;
@@ -4182,6 +4344,9 @@ var ApmServer = function () {
       headers: {
         'Content-Type': 'application/x-ndjson'
       }
+    }).then(function (_ref) {
+      var responseText = _ref.responseText;
+      return responseText;
     });
   };
 
@@ -4189,6 +4354,11 @@ var ApmServer = function () {
     var url = reason.url,
         status = reason.status,
         responseText = reason.responseText;
+
+    if (typeof status == 'undefined') {
+      return reason;
+    }
+
     var message = url + ' HTTP status: ' + status;
 
     if ( responseText) {
@@ -4211,12 +4381,12 @@ var ApmServer = function () {
   };
 
   _proto._makeHttpRequest = function _makeHttpRequest(method, url, _temp) {
-    var _ref = _temp === void 0 ? {
+    var _ref2 = _temp === void 0 ? {
       timeout: 10000
     } : _temp,
-        timeout = _ref.timeout,
-        payload = _ref.payload,
-        headers = _ref.headers;
+        timeout = _ref2.timeout,
+        payload = _ref2.payload,
+        headers = _ref2.headers;
 
     return new es6Promise_1(function (resolve, reject) {
       var xhr = new window.XMLHttpRequest();
@@ -4244,7 +4414,7 @@ var ApmServer = function () {
               responseText: responseText
             });
           } else {
-            resolve(responseText);
+            resolve(xhr);
           }
         }
       };
@@ -4279,7 +4449,7 @@ var ApmServer = function () {
 
     var serverUrl = this._configService.get('serverUrl');
 
-    var configEndpoint = serverUrl + "/config/v1/agents";
+    var configEndpoint = serverUrl + "/config/v1/rum/agents";
 
     if (!serviceName) {
       return es6Promise_1.reject('serviceName is required for fetching central config.');
@@ -4291,10 +4461,32 @@ var ApmServer = function () {
       configEndpoint += "&service.environment=" + environment;
     }
 
+    var localConfig = this._configService.getLocalConfig();
+
+    if (localConfig) {
+      configEndpoint += "&ifnonematch=" + localConfig.etag;
+    }
+
     return this._makeHttpRequest('GET', configEndpoint, {
       timeout: 5000
-    }).then(function (response) {
-      return JSON.parse(response);
+    }).then(function (xhr) {
+      var status = xhr.status,
+          responseText = xhr.responseText;
+
+      if (status === 304) {
+        return localConfig;
+      } else {
+        var remoteConfig = JSON.parse(responseText);
+        var etag = xhr.getResponseHeader('etag');
+
+        if (etag) {
+          remoteConfig.etag = etag.replace(/["]/g, '');
+
+          _this._configService.setLocalConfig(remoteConfig);
+        }
+
+        return remoteConfig;
+      }
     }).catch(function (reason) {
       var error = _this._constructError(reason);
 
@@ -4385,12 +4577,9 @@ var ApmServer = function () {
   };
 
   _proto.ndjsonMetricsets = function ndjsonMetricsets(metricsets) {
-    var timestamp = Date.now();
     return metricsets.map(function (metricset) {
       return NDJSON.stringify({
-        metricset: _extends({
-          timestamp: timestamp
-        }, metricset)
+        metricset: metricset
       });
     }).join('');
   };
@@ -4472,9 +4661,7 @@ var ApmServer = function () {
       }
     }));
     var ndjsonPayload = ndjson.join('');
-
-    var endPoint = this._configService.getEndpointUrl();
-
+    var endPoint = this._configService.get('serverUrl') + SERVER_URL_PREFIX;
     return this._postJson(endPoint, ndjsonPayload);
   };
 
@@ -4527,15 +4714,12 @@ var Config = function () {
       serviceVersion: '',
       environment: '',
       serverUrl: 'http://localhost:8200',
-      serverUrlPrefix: '/intake/v2/rum/events',
       active: true,
       instrument: true,
       disableInstrumentations: [],
       debug: false,
       logLevel: 'warn',
       breakdownMetrics: false,
-      browserResponsivenessInterval: 500,
-      browserResponsivenessBuffer: 3,
       checkBrowserResponsiveness: true,
       groupSimilarSpans: true,
       similarSpanThreshold: 0.05,
@@ -4549,7 +4733,6 @@ var Config = function () {
       flushInterval: 500,
       distributedTracing: true,
       distributedTracingOrigins: [],
-      distributedTracingHeaderValueCallback: getDtHeaderValue,
       distributedTracingHeaderName: 'elastic-apm-traceparent',
       pageLoadTraceId: '',
       pageLoadSpanId: '',
@@ -4605,32 +4788,6 @@ var Config = function () {
     }, this.config);
   };
 
-  _proto.getEndpointUrl = function getEndpointUrl() {
-    return this.config.serverUrl + this.config.serverUrlPrefix;
-  };
-
-  _proto.set = function set(key, value) {
-    var levels = key.split('.');
-    var maxLevel = levels.length - 1;
-    var target = this.config;
-
-    for (var i = 0; i < maxLevel + 1; i++) {
-      var level = levels[i];
-
-      if (!level) {
-        continue;
-      }
-
-      if (i === maxLevel) {
-        target[level] = value;
-      } else {
-        var obj = target[level] || {};
-        target[level] = obj;
-        target = obj;
-      }
-    }
-  };
-
   _proto.setUserContext = function setUserContext(userContext) {
     if (userContext === void 0) {
       userContext = {};
@@ -4654,13 +4811,15 @@ var Config = function () {
       context.email = email;
     }
 
-    this.set('context.user', context);
+    this.config.context.user = extend(this.config.context.user || {}, context);
   };
 
   _proto.setCustomContext = function setCustomContext(customContext) {
-    if (customContext && typeof customContext === 'object') {
-      this.set('context.custom', customContext);
+    if (customContext === void 0) {
+      customContext = {};
     }
+
+    this.config.context.custom = extend(this.config.context.custom || {}, customContext);
   };
 
   _proto.addLabels = function addLabels(tags) {
@@ -4726,12 +4885,29 @@ var Config = function () {
     return errors;
   };
 
+  _proto.getLocalConfig = function getLocalConfig() {
+    var config = sessionStorage.getItem(LOCAL_CONFIG_KEY);
+
+    if (config) {
+      return JSON.parse(config);
+    }
+  };
+
+  _proto.setLocalConfig = function setLocalConfig(config) {
+    if (config) {
+      sessionStorage.setItem(LOCAL_CONFIG_KEY, JSON.stringify(config));
+    }
+  };
+
   return Config;
 }();
 
 var LoggingService = function () {
   function LoggingService(spec) {
-    if (!spec) spec = {};
+    if (spec === void 0) {
+      spec = {};
+    }
+
     this.levels = ['trace', 'debug', 'info', 'warn', 'error'];
     this.level = spec.level || 'info';
     this.prefix = spec.prefix || '';
@@ -4774,12 +4950,11 @@ var LoggingService = function () {
         var args = arguments;
 
         if (prefix) {
-          if (typeof prefix === 'function') prefix = prefix(level);
           args[0] = prefix + args[0];
         }
 
         if (console) {
-          var realMethod = console[normalizedLevel] ? console[normalizedLevel] : console.log;
+          var realMethod = console[normalizedLevel] || console.log;
 
           if (typeof realMethod === 'function') {
             realMethod.apply(console, args);
@@ -4807,7 +4982,9 @@ var ServiceFactory = function () {
       return new Config();
     });
     this.registerServiceCreator('LoggingService', function () {
-      return new LoggingService();
+      return new LoggingService({
+        prefix: '[Elastic APM] '
+      });
     });
     this.registerServiceCreator('ApmServer', function () {
       return new ApmServer(serviceFactory.getService('ConfigService'), serviceFactory.getService('LoggingService'));
@@ -4904,7 +5081,7 @@ function bootstrap() {
     patchAll();
     enabled = true;
   } else if (typeof window !== 'undefined') {
-    console.log('APM: Platform is not supported!');
+    console.log('[Elastic APM] platform is not supported!');
   }
 
   return enabled;
@@ -4925,7 +5102,7 @@ var ApmBase = function () {
     if (this.isEnabled() && !this._initialized) {
       this._initialized = true;
       var configService = this.serviceFactory.getService('ConfigService');
-      configService.setVersion('4.5.1');
+      configService.setVersion('4.7.0');
       this.config(config);
       var loggingService = this.serviceFactory.getService('LoggingService');
 
@@ -4950,6 +5127,7 @@ var ApmBase = function () {
           sendPageLoad();
         }
       } else {
+        this._disable = true;
         loggingService.info('RUM agent is inactive');
       }
     }
@@ -4980,19 +5158,18 @@ var ApmBase = function () {
               key = _invalid$.key,
               value = _invalid$.value,
               allowed = _invalid$.allowed;
-          loggingService.warn("Invalid value \"" + value + "\" for " + key + ". Allowed: " + allowed + ".");
+          loggingService.warn("invalid value \"" + value + "\" for " + key + ". Allowed: " + allowed + ".");
         }
       }
 
       return config;
     }).catch(function (error) {
-      loggingService.warn('Failed fetching config:', error);
+      loggingService.warn('failed fetching config:', error);
     });
   };
 
   _proto._sendPageLoadMetrics = function _sendPageLoadMetrics() {
-    var transactionService = this.serviceFactory.getService('TransactionService');
-    var tr = transactionService.startTransaction(undefined, PAGE_LOAD, {
+    var tr = this.startTransaction(undefined, PAGE_LOAD, {
       managed: true,
       canReuse: true
     });
@@ -5037,10 +5214,10 @@ var ApmBase = function () {
     } else {
       var loggingService = this.serviceFactory.getService('LoggingService');
       var separator = ', ';
-      var message = "RUM Agent isn't correctly configured: ";
+      var message = "RUM agent isn't correctly configured. ";
 
       if (missing.length > 0) {
-        message += 'Missing config - ' + missing.join(separator);
+        message += missing.join(separator) + ' is missing';
 
         if (invalid.length > 0) {
           message += separator;
@@ -5108,13 +5285,6 @@ var ApmBase = function () {
     if (this.isEnabled()) {
       var transactionService = this.serviceFactory.getService('TransactionService');
       return transactionService.getCurrentTransaction();
-    }
-  };
-
-  _proto.getTransactionService = function getTransactionService() {
-    if (this.isEnabled()) {
-      var transactionService = this.serviceFactory.getService('TransactionService');
-      return transactionService;
     }
   };
 

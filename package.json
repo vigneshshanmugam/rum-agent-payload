@@ -12,7 +12,7 @@
     "prepare": "npm run build",
     "start": "node server.js"
   },
-  "@pika/web": {
+  "snowpack": {
     "namedExports": {
       "es6-promise": [
         "Promise"
@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "@elastic/apm-rum": "^4.6.0",
-    "compress-payload": "0.0.1",
+    "compress-payload": "^0.0.2",
     "serve-handler": "^6.1.2"
   },
   "devDependencies": {
