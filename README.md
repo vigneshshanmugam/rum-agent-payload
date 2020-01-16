@@ -37,9 +37,11 @@ Assumes that we are doing compression first and still keeping the format as NDJS
 
 #### Using Compression Stream
 
-Using the [compression package](https://github.com/vigneshshanmugam/compress-payload), We are able to reduce the payload size heavily without doing any techiques
+Using the [compression package](https://github.com/vigneshshanmugam/compress-payload), We are able to reduce the payload size heavily without doing any techniques
 
-| Name of the test | Payload Size (approx bytes) |
-| :--------------- | :-------------------------: |
-| Current release  |            24600            |
-| Gzip Compression |            2940             |
+| Name of the test         | Payload without compression ( bytes) | Payload with compression (bytes) |
+| :----------------------- | :----------------------------------: | :------------------------------: |
+| Current release          |                31768                 |               3038               |
+| Shortening field names   |                18600                 |               2626               |
+| Remove duplicated fields |                 9100                 |               1543               |
+| Optimised Tries          |                 5219                 |               1480               |
