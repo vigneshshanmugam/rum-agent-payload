@@ -20,11 +20,11 @@
     }
   },
   "dependencies": {
-    "@elastic/apm-rum": "^4.6.0",
+    "@elastic/apm-rum": "^5.1.1",
     "compress-payload": "^0.0.2",
     "serve-handler": "^6.1.2"
   },
   "devDependencies": {
-    "snowpack": "^1.0.3"
+    "snowpack": "^1.7.1"
   }
 }

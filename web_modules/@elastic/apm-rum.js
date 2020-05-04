@@ -1,9 +1,5 @@
 var commonjsGlobal = typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : {};
 
-function commonjsRequire () {
-	throw new Error('Dynamic requires are not currently supported by rollup-plugin-commonjs');
-}
-
 function createCommonjsModule(fn, module) {
 	return module = { exports: {} }, fn(module, module.exports), module.exports;
 }
@@ -448,1217 +444,289 @@ function filterInvalidFrames(frames) {
   });
 }
 
-var rngBrowser = createCommonjsModule(function (module) {
-// Unique ID creation requires a high quality random # generator.  In the
-// browser this is a little complicated due to unknown quality of Math.random()
-// and inconsistent support for the `crypto` API.  We do the best we can via
-// feature-detection
-
-// getRandomValues needs to be invoked in a context where "this" is a Crypto
-// implementation. Also, find the complete implementation of crypto on IE11.
-var getRandomValues = (typeof(crypto) != 'undefined' && crypto.getRandomValues && crypto.getRandomValues.bind(crypto)) ||
-                      (typeof(msCrypto) != 'undefined' && typeof window.msCrypto.getRandomValues == 'function' && msCrypto.getRandomValues.bind(msCrypto));
-
-if (getRandomValues) {
-  // WHATWG crypto RNG - http://wiki.whatwg.org/wiki/Crypto
-  var rnds8 = new Uint8Array(16); // eslint-disable-line no-undef
-
-  module.exports = function whatwgRNG() {
-    getRandomValues(rnds8);
-    return rnds8;
-  };
-} else {
-  // Math.random()-based (RNG)
-  //
-  // If all else fails, use Math.random().  It's fast, but is of unspecified
-  // quality.
-  var rnds = new Array(16);
-
-  module.exports = function mathRNG() {
-    for (var i = 0, r; i < 16; i++) {
-      if ((i & 0x03) === 0) r = Math.random() * 0x100000000;
-      rnds[i] = r >>> ((i & 0x03) << 3) & 0xff;
-    }
-
-    return rnds;
-  };
-}
-});
-
-var es6Promise = createCommonjsModule(function (module, exports) {
-/*!
- * @overview es6-promise - a tiny implementation of Promises/A+.
- * @copyright Copyright (c) 2014 Yehuda Katz, Tom Dale, Stefan Penner and contributors (Conversion to ES6 API by Jake Archibald)
- * @license   Licensed under MIT license
- *            See https://raw.githubusercontent.com/stefanpenner/es6-promise/master/LICENSE
- * @version   v4.2.8+1e68dce6
- */
-
-(function (global, factory) {
-	 module.exports = factory() ;
-}(commonjsGlobal, (function () {
-function objectOrFunction(x) {
-  var type = typeof x;
-  return x !== null && (type === 'object' || type === 'function');
-}
-
-function isFunction(x) {
-  return typeof x === 'function';
-}
-
-
-
-var _isArray = void 0;
-if (Array.isArray) {
-  _isArray = Array.isArray;
-} else {
-  _isArray = function (x) {
-    return Object.prototype.toString.call(x) === '[object Array]';
-  };
-}
-
-var isArray = _isArray;
-
-var len = 0;
-var vertxNext = void 0;
-var customSchedulerFn = void 0;
-
-var asap = function asap(callback, arg) {
-  queue[len] = callback;
-  queue[len + 1] = arg;
-  len += 2;
-  if (len === 2) {
-    // If len is 2, that means that we need to schedule an async flush.
-    // If additional callbacks are queued before the queue is flushed, they
-    // will be processed by this flush that we are scheduling.
-    if (customSchedulerFn) {
-      customSchedulerFn(flush);
-    } else {
-      scheduleFlush();
-    }
-  }
-};
-
-function setScheduler(scheduleFn) {
-  customSchedulerFn = scheduleFn;
-}
-
-function setAsap(asapFn) {
-  asap = asapFn;
-}
-
-var browserWindow = typeof window !== 'undefined' ? window : undefined;
-var browserGlobal = browserWindow || {};
-var BrowserMutationObserver = browserGlobal.MutationObserver || browserGlobal.WebKitMutationObserver;
-var isNode = typeof self === 'undefined' && typeof process !== 'undefined' && {}.toString.call(process) === '[object process]';
-
-// test for web worker but not in IE10
-var isWorker = typeof Uint8ClampedArray !== 'undefined' && typeof importScripts !== 'undefined' && typeof MessageChannel !== 'undefined';
-
-// node
-function useNextTick() {
-  // node version 0.10.x displays a deprecation warning when nextTick is used recursively
-  // see https://github.com/cujojs/when/issues/410 for details
-  return function () {
-    return process.nextTick(flush);
-  };
-}
-
-// vertx
-function useVertxTimer() {
-  if (typeof vertxNext !== 'undefined') {
-    return function () {
-      vertxNext(flush);
-    };
-  }
-
-  return useSetTimeout();
-}
-
-function useMutationObserver() {
-  var iterations = 0;
-  var observer = new BrowserMutationObserver(flush);
-  var node = document.createTextNode('');
-  observer.observe(node, { characterData: true });
-
-  return function () {
-    node.data = iterations = ++iterations % 2;
-  };
-}
-
-// web worker
-function useMessageChannel() {
-  var channel = new MessageChannel();
-  channel.port1.onmessage = flush;
-  return function () {
-    return channel.port2.postMessage(0);
-  };
-}
-
-function useSetTimeout() {
-  // Store setTimeout reference so es6-promise will be unaffected by
-  // other code modifying setTimeout (like sinon.useFakeTimers())
-  var globalSetTimeout = setTimeout;
-  return function () {
-    return globalSetTimeout(flush, 1);
-  };
-}
-
-var queue = new Array(1000);
-function flush() {
-  for (var i = 0; i < len; i += 2) {
-    var callback = queue[i];
-    var arg = queue[i + 1];
-
-    callback(arg);
-
-    queue[i] = undefined;
-    queue[i + 1] = undefined;
-  }
-
-  len = 0;
-}
-
-function attemptVertx() {
-  try {
-    var vertx = Function('return this')().require('vertx');
-    vertxNext = vertx.runOnLoop || vertx.runOnContext;
-    return useVertxTimer();
-  } catch (e) {
-    return useSetTimeout();
-  }
-}
-
-var scheduleFlush = void 0;
-// Decide what async method to use to triggering processing of queued callbacks:
-if (isNode) {
-  scheduleFlush = useNextTick();
-} else if (BrowserMutationObserver) {
-  scheduleFlush = useMutationObserver();
-} else if (isWorker) {
-  scheduleFlush = useMessageChannel();
-} else if (browserWindow === undefined && typeof commonjsRequire === 'function') {
-  scheduleFlush = attemptVertx();
-} else {
-  scheduleFlush = useSetTimeout();
-}
-
-function then(onFulfillment, onRejection) {
-  var parent = this;
-
-  var child = new this.constructor(noop);
-
-  if (child[PROMISE_ID] === undefined) {
-    makePromise(child);
-  }
-
-  var _state = parent._state;
-
-
-  if (_state) {
-    var callback = arguments[_state - 1];
-    asap(function () {
-      return invokeCallback(_state, child, callback, parent._result);
-    });
-  } else {
-    subscribe(parent, child, onFulfillment, onRejection);
-  }
-
-  return child;
-}
-
 /**
-  `Promise.resolve` returns a promise that will become resolved with the
-  passed `value`. It is shorthand for the following:
-
-  ```javascript
-  let promise = new Promise(function(resolve, reject){
-    resolve(1);
-  });
-
-  promise.then(function(value){
-    // value === 1
-  });
-  ```
-
-  Instead of writing the above, your code now simply becomes the following:
-
-  ```javascript
-  let promise = Promise.resolve(1);
-
-  promise.then(function(value){
-    // value === 1
-  });
-  ```
-
-  @method resolve
-  @static
-  @param {Any} value value that the returned promise will be resolved with
-  Useful for tooling.
-  @return {Promise} a promise that will become fulfilled with the given
-  `value`
-*/
-function resolve$1(object) {
-  /*jshint validthis:true */
-  var Constructor = this;
-
-  if (object && typeof object === 'object' && object.constructor === Constructor) {
-    return object;
-  }
-
-  var promise = new Constructor(noop);
-  resolve(promise, object);
-  return promise;
+ * @this {Promise}
+ */
+function finallyConstructor(callback) {
+  var constructor = this.constructor;
+  return this.then(
+    function(value) {
+      // @ts-ignore
+      return constructor.resolve(callback()).then(function() {
+        return value;
+      });
+    },
+    function(reason) {
+      // @ts-ignore
+      return constructor.resolve(callback()).then(function() {
+        // @ts-ignore
+        return constructor.reject(reason);
+      });
+    }
+  );
 }
 
-var PROMISE_ID = Math.random().toString(36).substring(2);
+// Store setTimeout reference so promise-polyfill will be unaffected by
+// other code modifying setTimeout (like sinon.useFakeTimers())
+var setTimeoutFunc = setTimeout;
+
+function isArray(x) {
+  return Boolean(x && typeof x.length !== 'undefined');
+}
 
 function noop() {}
 
-var PENDING = void 0;
-var FULFILLED = 1;
-var REJECTED = 2;
-
-function selfFulfillment() {
-  return new TypeError("You cannot resolve a promise with itself");
+// Polyfill for Function.prototype.bind
+function bind(fn, thisArg) {
+  return function() {
+    fn.apply(thisArg, arguments);
+  };
 }
 
-function cannotReturnOwn() {
-  return new TypeError('A promises callback cannot return that same promise.');
+/**
+ * @constructor
+ * @param {Function} fn
+ */
+function Promise(fn) {
+  if (!(this instanceof Promise))
+    throw new TypeError('Promises must be constructed via new');
+  if (typeof fn !== 'function') throw new TypeError('not a function');
+  /** @type {!number} */
+  this._state = 0;
+  /** @type {!boolean} */
+  this._handled = false;
+  /** @type {Promise|undefined} */
+  this._value = undefined;
+  /** @type {!Array<!Function>} */
+  this._deferreds = [];
+
+  doResolve(fn, this);
 }
 
-function tryThen(then$$1, value, fulfillmentHandler, rejectionHandler) {
-  try {
-    then$$1.call(value, fulfillmentHandler, rejectionHandler);
-  } catch (e) {
-    return e;
+function handle(self, deferred) {
+  while (self._state === 3) {
+    self = self._value;
   }
-}
-
-function handleForeignThenable(promise, thenable, then$$1) {
-  asap(function (promise) {
-    var sealed = false;
-    var error = tryThen(then$$1, thenable, function (value) {
-      if (sealed) {
-        return;
-      }
-      sealed = true;
-      if (thenable !== value) {
-        resolve(promise, value);
-      } else {
-        fulfill(promise, value);
-      }
-    }, function (reason) {
-      if (sealed) {
-        return;
-      }
-      sealed = true;
-
-      reject(promise, reason);
-    }, 'Settle: ' + (promise._label || ' unknown promise'));
-
-    if (!sealed && error) {
-      sealed = true;
-      reject(promise, error);
-    }
-  }, promise);
-}
-
-function handleOwnThenable(promise, thenable) {
-  if (thenable._state === FULFILLED) {
-    fulfill(promise, thenable._result);
-  } else if (thenable._state === REJECTED) {
-    reject(promise, thenable._result);
-  } else {
-    subscribe(thenable, undefined, function (value) {
-      return resolve(promise, value);
-    }, function (reason) {
-      return reject(promise, reason);
-    });
+  if (self._state === 0) {
+    self._deferreds.push(deferred);
+    return;
   }
-}
-
-function handleMaybeThenable(promise, maybeThenable, then$$1) {
-  if (maybeThenable.constructor === promise.constructor && then$$1 === then && maybeThenable.constructor.resolve === resolve$1) {
-    handleOwnThenable(promise, maybeThenable);
-  } else {
-    if (then$$1 === undefined) {
-      fulfill(promise, maybeThenable);
-    } else if (isFunction(then$$1)) {
-      handleForeignThenable(promise, maybeThenable, then$$1);
-    } else {
-      fulfill(promise, maybeThenable);
-    }
-  }
-}
-
-function resolve(promise, value) {
-  if (promise === value) {
-    reject(promise, selfFulfillment());
-  } else if (objectOrFunction(value)) {
-    var then$$1 = void 0;
-    try {
-      then$$1 = value.then;
-    } catch (error) {
-      reject(promise, error);
+  self._handled = true;
+  Promise._immediateFn(function() {
+    var cb = self._state === 1 ? deferred.onFulfilled : deferred.onRejected;
+    if (cb === null) {
+      (self._state === 1 ? resolve : reject)(deferred.promise, self._value);
       return;
     }
-    handleMaybeThenable(promise, value, then$$1);
-  } else {
-    fulfill(promise, value);
-  }
-}
-
-function publishRejection(promise) {
-  if (promise._onerror) {
-    promise._onerror(promise._result);
-  }
-
-  publish(promise);
-}
-
-function fulfill(promise, value) {
-  if (promise._state !== PENDING) {
-    return;
-  }
-
-  promise._result = value;
-  promise._state = FULFILLED;
-
-  if (promise._subscribers.length !== 0) {
-    asap(publish, promise);
-  }
-}
-
-function reject(promise, reason) {
-  if (promise._state !== PENDING) {
-    return;
-  }
-  promise._state = REJECTED;
-  promise._result = reason;
-
-  asap(publishRejection, promise);
-}
-
-function subscribe(parent, child, onFulfillment, onRejection) {
-  var _subscribers = parent._subscribers;
-  var length = _subscribers.length;
-
-
-  parent._onerror = null;
-
-  _subscribers[length] = child;
-  _subscribers[length + FULFILLED] = onFulfillment;
-  _subscribers[length + REJECTED] = onRejection;
-
-  if (length === 0 && parent._state) {
-    asap(publish, parent);
-  }
-}
-
-function publish(promise) {
-  var subscribers = promise._subscribers;
-  var settled = promise._state;
-
-  if (subscribers.length === 0) {
-    return;
-  }
-
-  var child = void 0,
-      callback = void 0,
-      detail = promise._result;
-
-  for (var i = 0; i < subscribers.length; i += 3) {
-    child = subscribers[i];
-    callback = subscribers[i + settled];
-
-    if (child) {
-      invokeCallback(settled, child, callback, detail);
-    } else {
-      callback(detail);
-    }
-  }
-
-  promise._subscribers.length = 0;
-}
-
-function invokeCallback(settled, promise, callback, detail) {
-  var hasCallback = isFunction(callback),
-      value = void 0,
-      error = void 0,
-      succeeded = true;
-
-  if (hasCallback) {
+    var ret;
     try {
-      value = callback(detail);
+      ret = cb(self._value);
     } catch (e) {
-      succeeded = false;
-      error = e;
-    }
-
-    if (promise === value) {
-      reject(promise, cannotReturnOwn());
+      reject(deferred.promise, e);
       return;
     }
-  } else {
-    value = detail;
-  }
-
-  if (promise._state !== PENDING) ; else if (hasCallback && succeeded) {
-    resolve(promise, value);
-  } else if (succeeded === false) {
-    reject(promise, error);
-  } else if (settled === FULFILLED) {
-    fulfill(promise, value);
-  } else if (settled === REJECTED) {
-    reject(promise, value);
-  }
+    resolve(deferred.promise, ret);
+  });
 }
 
-function initializePromise(promise, resolver) {
+function resolve(self, newValue) {
   try {
-    resolver(function resolvePromise(value) {
-      resolve(promise, value);
-    }, function rejectPromise(reason) {
-      reject(promise, reason);
-    });
+    // Promise Resolution Procedure: https://github.com/promises-aplus/promises-spec#the-promise-resolution-procedure
+    if (newValue === self)
+      throw new TypeError('A promise cannot be resolved with itself.');
+    if (
+      newValue &&
+      (typeof newValue === 'object' || typeof newValue === 'function')
+    ) {
+      var then = newValue.then;
+      if (newValue instanceof Promise) {
+        self._state = 3;
+        self._value = newValue;
+        finale(self);
+        return;
+      } else if (typeof then === 'function') {
+        doResolve(bind(then, newValue), self);
+        return;
+      }
+    }
+    self._state = 1;
+    self._value = newValue;
+    finale(self);
   } catch (e) {
-    reject(promise, e);
+    reject(self, e);
   }
 }
 
-var id = 0;
-function nextId() {
-  return id++;
+function reject(self, newValue) {
+  self._state = 2;
+  self._value = newValue;
+  finale(self);
 }
 
-function makePromise(promise) {
-  promise[PROMISE_ID] = id++;
-  promise._state = undefined;
-  promise._result = undefined;
-  promise._subscribers = [];
-}
-
-function validationError() {
-  return new Error('Array Methods must be provided an Array');
-}
-
-var Enumerator = function () {
-  function Enumerator(Constructor, input) {
-    this._instanceConstructor = Constructor;
-    this.promise = new Constructor(noop);
-
-    if (!this.promise[PROMISE_ID]) {
-      makePromise(this.promise);
-    }
-
-    if (isArray(input)) {
-      this.length = input.length;
-      this._remaining = input.length;
-
-      this._result = new Array(this.length);
-
-      if (this.length === 0) {
-        fulfill(this.promise, this._result);
-      } else {
-        this.length = this.length || 0;
-        this._enumerate(input);
-        if (this._remaining === 0) {
-          fulfill(this.promise, this._result);
-        }
+function finale(self) {
+  if (self._state === 2 && self._deferreds.length === 0) {
+    Promise._immediateFn(function() {
+      if (!self._handled) {
+        Promise._unhandledRejectionFn(self._value);
       }
-    } else {
-      reject(this.promise, validationError());
-    }
+    });
   }
 
-  Enumerator.prototype._enumerate = function _enumerate(input) {
-    for (var i = 0; this._state === PENDING && i < input.length; i++) {
-      this._eachEntry(input[i], i);
+  for (var i = 0, len = self._deferreds.length; i < len; i++) {
+    handle(self, self._deferreds[i]);
+  }
+  self._deferreds = null;
+}
+
+/**
+ * @constructor
+ */
+function Handler(onFulfilled, onRejected, promise) {
+  this.onFulfilled = typeof onFulfilled === 'function' ? onFulfilled : null;
+  this.onRejected = typeof onRejected === 'function' ? onRejected : null;
+  this.promise = promise;
+}
+
+/**
+ * Take a potentially misbehaving resolver function and make sure
+ * onFulfilled and onRejected are only called once.
+ *
+ * Makes no guarantees about asynchrony.
+ */
+function doResolve(fn, self) {
+  var done = false;
+  try {
+    fn(
+      function(value) {
+        if (done) return;
+        done = true;
+        resolve(self, value);
+      },
+      function(reason) {
+        if (done) return;
+        done = true;
+        reject(self, reason);
+      }
+    );
+  } catch (ex) {
+    if (done) return;
+    done = true;
+    reject(self, ex);
+  }
+}
+
+Promise.prototype['catch'] = function(onRejected) {
+  return this.then(null, onRejected);
+};
+
+Promise.prototype.then = function(onFulfilled, onRejected) {
+  // @ts-ignore
+  var prom = new this.constructor(noop);
+
+  handle(this, new Handler(onFulfilled, onRejected, prom));
+  return prom;
+};
+
+Promise.prototype['finally'] = finallyConstructor;
+
+Promise.all = function(arr) {
+  return new Promise(function(resolve, reject) {
+    if (!isArray(arr)) {
+      return reject(new TypeError('Promise.all accepts an array'));
     }
-  };
 
-  Enumerator.prototype._eachEntry = function _eachEntry(entry, i) {
-    var c = this._instanceConstructor;
-    var resolve$$1 = c.resolve;
+    var args = Array.prototype.slice.call(arr);
+    if (args.length === 0) return resolve([]);
+    var remaining = args.length;
 
-
-    if (resolve$$1 === resolve$1) {
-      var _then = void 0;
-      var error = void 0;
-      var didError = false;
+    function res(i, val) {
       try {
-        _then = entry.then;
-      } catch (e) {
-        didError = true;
-        error = e;
-      }
-
-      if (_then === then && entry._state !== PENDING) {
-        this._settledAt(entry._state, i, entry._result);
-      } else if (typeof _then !== 'function') {
-        this._remaining--;
-        this._result[i] = entry;
-      } else if (c === Promise$1) {
-        var promise = new c(noop);
-        if (didError) {
-          reject(promise, error);
-        } else {
-          handleMaybeThenable(promise, entry, _then);
+        if (val && (typeof val === 'object' || typeof val === 'function')) {
+          var then = val.then;
+          if (typeof then === 'function') {
+            then.call(
+              val,
+              function(val) {
+                res(i, val);
+              },
+              reject
+            );
+            return;
+          }
         }
-        this._willSettleAt(promise, i);
-      } else {
-        this._willSettleAt(new c(function (resolve$$1) {
-          return resolve$$1(entry);
-        }), i);
-      }
-    } else {
-      this._willSettleAt(resolve$$1(entry), i);
-    }
-  };
-
-  Enumerator.prototype._settledAt = function _settledAt(state, i, value) {
-    var promise = this.promise;
-
-
-    if (promise._state === PENDING) {
-      this._remaining--;
-
-      if (state === REJECTED) {
-        reject(promise, value);
-      } else {
-        this._result[i] = value;
+        args[i] = val;
+        if (--remaining === 0) {
+          resolve(args);
+        }
+      } catch (ex) {
+        reject(ex);
       }
     }
 
-    if (this._remaining === 0) {
-      fulfill(promise, this._result);
+    for (var i = 0; i < args.length; i++) {
+      res(i, args[i]);
     }
-  };
-
-  Enumerator.prototype._willSettleAt = function _willSettleAt(promise, i) {
-    var enumerator = this;
-
-    subscribe(promise, undefined, function (value) {
-      return enumerator._settledAt(FULFILLED, i, value);
-    }, function (reason) {
-      return enumerator._settledAt(REJECTED, i, reason);
-    });
-  };
-
-  return Enumerator;
-}();
-
-/**
-  `Promise.all` accepts an array of promises, and returns a new promise which
-  is fulfilled with an array of fulfillment values for the passed promises, or
-  rejected with the reason of the first passed promise to be rejected. It casts all
-  elements of the passed iterable to promises as it runs this algorithm.
-
-  Example:
-
-  ```javascript
-  let promise1 = resolve(1);
-  let promise2 = resolve(2);
-  let promise3 = resolve(3);
-  let promises = [ promise1, promise2, promise3 ];
-
-  Promise.all(promises).then(function(array){
-    // The array here would be [ 1, 2, 3 ];
   });
-  ```
+};
 
-  If any of the `promises` given to `all` are rejected, the first promise
-  that is rejected will be given as an argument to the returned promises's
-  rejection handler. For example:
-
-  Example:
-
-  ```javascript
-  let promise1 = resolve(1);
-  let promise2 = reject(new Error("2"));
-  let promise3 = reject(new Error("3"));
-  let promises = [ promise1, promise2, promise3 ];
-
-  Promise.all(promises).then(function(array){
-    // Code here never runs because there are rejected promises!
-  }, function(error) {
-    // error.message === "2"
-  });
-  ```
-
-  @method all
-  @static
-  @param {Array} entries array of promises
-  @param {String} label optional string for labeling the promise.
-  Useful for tooling.
-  @return {Promise} promise that is fulfilled when all `promises` have been
-  fulfilled, or rejected if any of them become rejected.
-  @static
-*/
-function all(entries) {
-  return new Enumerator(this, entries).promise;
-}
-
-/**
-  `Promise.race` returns a new promise which is settled in the same way as the
-  first passed promise to settle.
-
-  Example:
-
-  ```javascript
-  let promise1 = new Promise(function(resolve, reject){
-    setTimeout(function(){
-      resolve('promise 1');
-    }, 200);
-  });
-
-  let promise2 = new Promise(function(resolve, reject){
-    setTimeout(function(){
-      resolve('promise 2');
-    }, 100);
-  });
-
-  Promise.race([promise1, promise2]).then(function(result){
-    // result === 'promise 2' because it was resolved before promise1
-    // was resolved.
-  });
-  ```
-
-  `Promise.race` is deterministic in that only the state of the first
-  settled promise matters. For example, even if other promises given to the
-  `promises` array argument are resolved, but the first settled promise has
-  become rejected before the other promises became fulfilled, the returned
-  promise will become rejected:
-
-  ```javascript
-  let promise1 = new Promise(function(resolve, reject){
-    setTimeout(function(){
-      resolve('promise 1');
-    }, 200);
-  });
-
-  let promise2 = new Promise(function(resolve, reject){
-    setTimeout(function(){
-      reject(new Error('promise 2'));
-    }, 100);
-  });
-
-  Promise.race([promise1, promise2]).then(function(result){
-    // Code here never runs
-  }, function(reason){
-    // reason.message === 'promise 2' because promise 2 became rejected before
-    // promise 1 became fulfilled
-  });
-  ```
-
-  An example real-world use case is implementing timeouts:
-
-  ```javascript
-  Promise.race([ajax('foo.json'), timeout(5000)])
-  ```
-
-  @method race
-  @static
-  @param {Array} promises array of promises to observe
-  Useful for tooling.
-  @return {Promise} a promise which settles in the same way as the first passed
-  promise to settle.
-*/
-function race(entries) {
-  /*jshint validthis:true */
-  var Constructor = this;
-
-  if (!isArray(entries)) {
-    return new Constructor(function (_, reject) {
-      return reject(new TypeError('You must pass an array to race.'));
-    });
-  } else {
-    return new Constructor(function (resolve, reject) {
-      var length = entries.length;
-      for (var i = 0; i < length; i++) {
-        Constructor.resolve(entries[i]).then(resolve, reject);
-      }
-    });
+Promise.resolve = function(value) {
+  if (value && typeof value === 'object' && value.constructor === Promise) {
+    return value;
   }
-}
 
-/**
-  `Promise.reject` returns a promise rejected with the passed `reason`.
-  It is shorthand for the following:
-
-  ```javascript
-  let promise = new Promise(function(resolve, reject){
-    reject(new Error('WHOOPS'));
-  });
-
-  promise.then(function(value){
-    // Code here doesn't run because the promise is rejected!
-  }, function(reason){
-    // reason.message === 'WHOOPS'
-  });
-  ```
-
-  Instead of writing the above, your code now simply becomes the following:
-
-  ```javascript
-  let promise = Promise.reject(new Error('WHOOPS'));
-
-  promise.then(function(value){
-    // Code here doesn't run because the promise is rejected!
-  }, function(reason){
-    // reason.message === 'WHOOPS'
-  });
-  ```
-
-  @method reject
-  @static
-  @param {Any} reason value that the returned promise will be rejected with.
-  Useful for tooling.
-  @return {Promise} a promise rejected with the given `reason`.
-*/
-function reject$1(reason) {
-  /*jshint validthis:true */
-  var Constructor = this;
-  var promise = new Constructor(noop);
-  reject(promise, reason);
-  return promise;
-}
-
-function needsResolver() {
-  throw new TypeError('You must pass a resolver function as the first argument to the promise constructor');
-}
-
-function needsNew() {
-  throw new TypeError("Failed to construct 'Promise': Please use the 'new' operator, this object constructor cannot be called as a function.");
-}
-
-/**
-  Promise objects represent the eventual result of an asynchronous operation. The
-  primary way of interacting with a promise is through its `then` method, which
-  registers callbacks to receive either a promise's eventual value or the reason
-  why the promise cannot be fulfilled.
-
-  Terminology
-  -----------
-
-  - `promise` is an object or function with a `then` method whose behavior conforms to this specification.
-  - `thenable` is an object or function that defines a `then` method.
-  - `value` is any legal JavaScript value (including undefined, a thenable, or a promise).
-  - `exception` is a value that is thrown using the throw statement.
-  - `reason` is a value that indicates why a promise was rejected.
-  - `settled` the final resting state of a promise, fulfilled or rejected.
-
-  A promise can be in one of three states: pending, fulfilled, or rejected.
-
-  Promises that are fulfilled have a fulfillment value and are in the fulfilled
-  state.  Promises that are rejected have a rejection reason and are in the
-  rejected state.  A fulfillment value is never a thenable.
-
-  Promises can also be said to *resolve* a value.  If this value is also a
-  promise, then the original promise's settled state will match the value's
-  settled state.  So a promise that *resolves* a promise that rejects will
-  itself reject, and a promise that *resolves* a promise that fulfills will
-  itself fulfill.
-
-
-  Basic Usage:
-  ------------
-
-  ```js
-  let promise = new Promise(function(resolve, reject) {
-    // on success
+  return new Promise(function(resolve) {
     resolve(value);
-
-    // on failure
-    reject(reason);
   });
+};
 
-  promise.then(function(value) {
-    // on fulfillment
-  }, function(reason) {
-    // on rejection
+Promise.reject = function(value) {
+  return new Promise(function(resolve, reject) {
+    reject(value);
   });
-  ```
+};
 
-  Advanced Usage:
-  ---------------
-
-  Promises shine when abstracting away asynchronous interactions such as
-  `XMLHttpRequest`s.
-
-  ```js
-  function getJSON(url) {
-    return new Promise(function(resolve, reject){
-      let xhr = new XMLHttpRequest();
-
-      xhr.open('GET', url);
-      xhr.onreadystatechange = handler;
-      xhr.responseType = 'json';
-      xhr.setRequestHeader('Accept', 'application/json');
-      xhr.send();
-
-      function handler() {
-        if (this.readyState === this.DONE) {
-          if (this.status === 200) {
-            resolve(this.response);
-          } else {
-            reject(new Error('getJSON: `' + url + '` failed with status: [' + this.status + ']'));
-          }
-        }
-      };
-    });
-  }
-
-  getJSON('/posts.json').then(function(json) {
-    // on fulfillment
-  }, function(reason) {
-    // on rejection
-  });
-  ```
-
-  Unlike callbacks, promises are great composable primitives.
-
-  ```js
-  Promise.all([
-    getJSON('/posts'),
-    getJSON('/comments')
-  ]).then(function(values){
-    values[0] // => postsJSON
-    values[1] // => commentsJSON
-
-    return values;
-  });
-  ```
-
-  @class Promise
-  @param {Function} resolver
-  Useful for tooling.
-  @constructor
-*/
-
-var Promise$1 = function () {
-  function Promise(resolver) {
-    this[PROMISE_ID] = nextId();
-    this._result = this._state = undefined;
-    this._subscribers = [];
-
-    if (noop !== resolver) {
-      typeof resolver !== 'function' && needsResolver();
-      this instanceof Promise ? initializePromise(this, resolver) : needsNew();
+Promise.race = function(arr) {
+  return new Promise(function(resolve, reject) {
+    if (!isArray(arr)) {
+      return reject(new TypeError('Promise.race accepts an array'));
     }
-  }
 
-  /**
-  The primary way of interacting with a promise is through its `then` method,
-  which registers callbacks to receive either a promise's eventual value or the
-  reason why the promise cannot be fulfilled.
-   ```js
-  findUser().then(function(user){
-    // user is available
-  }, function(reason){
-    // user is unavailable, and you are given the reason why
-  });
-  ```
-   Chaining
-  --------
-   The return value of `then` is itself a promise.  This second, 'downstream'
-  promise is resolved with the return value of the first promise's fulfillment
-  or rejection handler, or rejected if the handler throws an exception.
-   ```js
-  findUser().then(function (user) {
-    return user.name;
-  }, function (reason) {
-    return 'default name';
-  }).then(function (userName) {
-    // If `findUser` fulfilled, `userName` will be the user's name, otherwise it
-    // will be `'default name'`
-  });
-   findUser().then(function (user) {
-    throw new Error('Found user, but still unhappy');
-  }, function (reason) {
-    throw new Error('`findUser` rejected and we're unhappy');
-  }).then(function (value) {
-    // never reached
-  }, function (reason) {
-    // if `findUser` fulfilled, `reason` will be 'Found user, but still unhappy'.
-    // If `findUser` rejected, `reason` will be '`findUser` rejected and we're unhappy'.
-  });
-  ```
-  If the downstream promise does not specify a rejection handler, rejection reasons will be propagated further downstream.
-   ```js
-  findUser().then(function (user) {
-    throw new PedagogicalException('Upstream error');
-  }).then(function (value) {
-    // never reached
-  }).then(function (value) {
-    // never reached
-  }, function (reason) {
-    // The `PedgagocialException` is propagated all the way down to here
-  });
-  ```
-   Assimilation
-  ------------
-   Sometimes the value you want to propagate to a downstream promise can only be
-  retrieved asynchronously. This can be achieved by returning a promise in the
-  fulfillment or rejection handler. The downstream promise will then be pending
-  until the returned promise is settled. This is called *assimilation*.
-   ```js
-  findUser().then(function (user) {
-    return findCommentsByAuthor(user);
-  }).then(function (comments) {
-    // The user's comments are now available
-  });
-  ```
-   If the assimliated promise rejects, then the downstream promise will also reject.
-   ```js
-  findUser().then(function (user) {
-    return findCommentsByAuthor(user);
-  }).then(function (comments) {
-    // If `findCommentsByAuthor` fulfills, we'll have the value here
-  }, function (reason) {
-    // If `findCommentsByAuthor` rejects, we'll have the reason here
-  });
-  ```
-   Simple Example
-  --------------
-   Synchronous Example
-   ```javascript
-  let result;
-   try {
-    result = findResult();
-    // success
-  } catch(reason) {
-    // failure
-  }
-  ```
-   Errback Example
-   ```js
-  findResult(function(result, err){
-    if (err) {
-      // failure
-    } else {
-      // success
+    for (var i = 0, len = arr.length; i < len; i++) {
+      Promise.resolve(arr[i]).then(resolve, reject);
     }
   });
-  ```
-   Promise Example;
-   ```javascript
-  findResult().then(function(result){
-    // success
-  }, function(reason){
-    // failure
-  });
-  ```
-   Advanced Example
-  --------------
-   Synchronous Example
-   ```javascript
-  let author, books;
-   try {
-    author = findAuthor();
-    books  = findBooksByAuthor(author);
-    // success
-  } catch(reason) {
-    // failure
-  }
-  ```
-   Errback Example
-   ```js
-   function foundBooks(books) {
-   }
-   function failure(reason) {
-   }
-   findAuthor(function(author, err){
-    if (err) {
-      failure(err);
-      // failure
-    } else {
-      try {
-        findBoooksByAuthor(author, function(books, err) {
-          if (err) {
-            failure(err);
-          } else {
-            try {
-              foundBooks(books);
-            } catch(reason) {
-              failure(reason);
-            }
-          }
-        });
-      } catch(error) {
-        failure(err);
-      }
-      // success
-    }
-  });
-  ```
-   Promise Example;
-   ```javascript
-  findAuthor().
-    then(findBooksByAuthor).
-    then(function(books){
-      // found books
-  }).catch(function(reason){
-    // something went wrong
-  });
-  ```
-   @method then
-  @param {Function} onFulfilled
-  @param {Function} onRejected
-  Useful for tooling.
-  @return {Promise}
-  */
+};
 
-  /**
-  `catch` is simply sugar for `then(undefined, onRejection)` which makes it the same
-  as the catch block of a try/catch statement.
-  ```js
-  function findAuthor(){
-  throw new Error('couldn't find that author');
-  }
-  // synchronous
-  try {
-  findAuthor();
-  } catch(reason) {
-  // something went wrong
-  }
-  // async with promises
-  findAuthor().catch(function(reason){
-  // something went wrong
-  });
-  ```
-  @method catch
-  @param {Function} onRejection
-  Useful for tooling.
-  @return {Promise}
-  */
-
-
-  Promise.prototype.catch = function _catch(onRejection) {
-    return this.then(null, onRejection);
+// Use polyfill for setImmediate for performance gains
+Promise._immediateFn =
+  // @ts-ignore
+  (typeof setImmediate === 'function' &&
+    function(fn) {
+      // @ts-ignore
+      setImmediate(fn);
+    }) ||
+  function(fn) {
+    setTimeoutFunc(fn, 0);
   };
 
-  /**
-    `finally` will be invoked regardless of the promise's fate just as native
-    try/catch/finally behaves
-  
-    Synchronous example:
-  
-    ```js
-    findAuthor() {
-      if (Math.random() > 0.5) {
-        throw new Error();
-      }
-      return new Author();
-    }
-  
-    try {
-      return findAuthor(); // succeed or fail
-    } catch(error) {
-      return findOtherAuther();
-    } finally {
-      // always runs
-      // doesn't affect the return value
-    }
-    ```
-  
-    Asynchronous example:
-  
-    ```js
-    findAuthor().catch(function(reason){
-      return findOtherAuther();
-    }).finally(function(){
-      // author was either found, or not
-    });
-    ```
-  
-    @method finally
-    @param {Function} callback
-    @return {Promise}
-  */
-
-
-  Promise.prototype.finally = function _finally(callback) {
-    var promise = this;
-    var constructor = promise.constructor;
-
-    if (isFunction(callback)) {
-      return promise.then(function (value) {
-        return constructor.resolve(callback()).then(function () {
-          return value;
-        });
-      }, function (reason) {
-        return constructor.resolve(callback()).then(function () {
-          throw reason;
-        });
-      });
-    }
-
-    return promise.then(callback, callback);
-  };
-
-  return Promise;
-}();
-
-Promise$1.prototype.then = then;
-Promise$1.all = all;
-Promise$1.race = race;
-Promise$1.resolve = resolve$1;
-Promise$1.reject = reject$1;
-Promise$1._setScheduler = setScheduler;
-Promise$1._setAsap = setAsap;
-Promise$1._asap = asap;
-
-/*global self*/
-function polyfill() {
-  var local = void 0;
-
-  if (typeof commonjsGlobal !== 'undefined') {
-    local = commonjsGlobal;
-  } else if (typeof self !== 'undefined') {
-    local = self;
-  } else {
-    try {
-      local = Function('return this')();
-    } catch (e) {
-      throw new Error('polyfill failed because global object is unavailable in this environment');
-    }
+Promise._unhandledRejectionFn = function _unhandledRejectionFn(err) {
+  if (typeof console !== 'undefined' && console) {
+    console.warn('Possible Unhandled Promise Rejection:', err); // eslint-disable-line no-console
   }
+};
 
-  var P = local.Promise;
+var local = {};
 
-  if (P) {
-    var promiseToString = null;
-    try {
-      promiseToString = Object.prototype.toString.call(P.resolve());
-    } catch (e) {
-      // silently ignored
-    }
-
-    if (promiseToString === '[object Promise]' && !P.cast) {
-      return;
-    }
-  }
-
-  local.Promise = Promise$1;
+if (typeof window !== 'undefined') {
+  local = window;
+} else if (typeof self !== 'undefined') {
+  local = self;
 }
 
-// Strange compat..
-Promise$1.polyfill = polyfill;
-Promise$1.Promise = Promise$1;
-
-return Promise$1;
-
-})));
-
-
-
-
-});
-var es6Promise_1 = es6Promise.Promise;
+var Promise$1 = 'Promise' in local ? local.Promise : Promise;
 
 var slice = [].slice;
+var PERF = typeof window !== 'undefined' && typeof performance !== 'undefined' ? performance : {};
 
 function isCORSSupported() {
   var xhr = new window.XMLHttpRequest();
@@ -1671,10 +739,31 @@ for (var i = 0; i < 256; ++i) {
   byteToHex[i] = (i + 0x100).toString(16).substr(1);
 }
 
-function bytesToHex(buf, offset) {
-  var i = offset || 0;
-  var bth = byteToHex;
-  return [bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]], bth[buf[i++]]].join('');
+function bytesToHex(buffer) {
+  var hexOctets = [];
+
+  for (var _i = 0; _i < buffer.length; _i++) {
+    hexOctets.push(byteToHex[buffer[_i]]);
+  }
+
+  return hexOctets.join('');
+}
+
+var destination = new Uint8Array(16);
+
+function rng() {
+  if (typeof crypto != 'undefined' && typeof crypto.getRandomValues == 'function') {
+    return crypto.getRandomValues(destination);
+  } else if (typeof msCrypto != 'undefined' && typeof msCrypto.getRandomValues == 'function') {
+    return msCrypto.getRandomValues(destination);
+  }
+
+  return destination;
+}
+
+function generateRandomId(length) {
+  var id = bytesToHex(rng());
+  return id.substr(0, length);
 }
 
 function getDtHeaderValue(span) {
@@ -1723,63 +812,21 @@ function checkSameOrigin(source, target) {
   return isSame;
 }
 
-function generateRandomId(length) {
-  var id = bytesToHex(rngBrowser());
-  return id.substr(0, length);
-}
-
 function isPlatformSupported() {
-  return typeof window !== 'undefined' && typeof Array.prototype.forEach === 'function' && typeof JSON.stringify === 'function' && typeof Function.bind === 'function' && window.performance && typeof window.performance.now === 'function' && isCORSSupported();
+  return typeof window !== 'undefined' && typeof Array.prototype.forEach === 'function' && typeof JSON.stringify === 'function' && typeof Function.bind === 'function' && PERF && typeof PERF.now === 'function' && isCORSSupported();
 }
 
 function setLabel(key, value, obj) {
   if (!obj || !key) return;
   var skey = removeInvalidChars(key);
+  var valueType = typeof value;
 
-  if (value) {
+  if (value != undefined && valueType !== 'boolean' && valueType !== 'number') {
     value = String(value);
   }
 
   obj[skey] = value;
   return obj;
-}
-
-var navigationTimingKeys = ['fetchStart', 'domainLookupStart', 'domainLookupEnd', 'connectStart', 'connectEnd', 'secureConnectionStart', 'requestStart', 'responseStart', 'responseEnd', 'domLoading', 'domInteractive', 'domContentLoadedEventStart', 'domContentLoadedEventEnd', 'domComplete', 'loadEventStart', 'loadEventEnd'];
-
-function getNavigationTimingMarks() {
-  var timing = window.performance.timing;
-  var fetchStart = timing.fetchStart;
-  var marks = {};
-  navigationTimingKeys.forEach(function (timingKey) {
-    var m = timing[timingKey];
-
-    if (m && m >= fetchStart) {
-      marks[timingKey] = m - fetchStart;
-    }
-  });
-  return marks;
-}
-
-function getPaintTimingMarks() {
-  var paints = {};
-  var perf = window.performance;
-
-  if (typeof perf.getEntriesByType === 'function') {
-    var entries = perf.getEntriesByType('paint');
-
-    if (entries.length > 0) {
-      var timings = perf.timing;
-      var unloadDiff = timings.fetchStart - timings.navigationStart;
-
-      for (var i = 0; i < entries.length; i++) {
-        var data = entries[i];
-        var calcPaintTime = unloadDiff >= 0 ? data.startTime - unloadDiff : data.startTime;
-        paints[data.name] = calcPaintTime;
-      }
-    }
-  }
-
-  return paints;
 }
 
 function getServerTimingInfo(serverTimingEntries) {
@@ -1791,8 +838,8 @@ function getServerTimingInfo(serverTimingEntries) {
   var entrySeparator = ', ';
   var valueSeparator = ';';
 
-  for (var _i = 0; _i < serverTimingEntries.length; _i++) {
-    var _serverTimingEntries$ = serverTimingEntries[_i],
+  for (var _i2 = 0; _i2 < serverTimingEntries.length; _i2++) {
+    var _serverTimingEntries$ = serverTimingEntries[_i2],
         name = _serverTimingEntries$.name,
         duration = _serverTimingEntries$.duration,
         description = _serverTimingEntries$.description;
@@ -1810,15 +857,6 @@ function getServerTimingInfo(serverTimingEntries) {
   }
 
   return serverTimingInfo.join(entrySeparator);
-}
-
-function getPageMetadata() {
-  return {
-    page: {
-      referer: document.referrer,
-      url: window.location.href
-    }
-  };
 }
 
 function stripQueryStringFromUrl(url) {
@@ -1893,7 +931,7 @@ function isUndefined(obj) {
   return typeof obj === 'undefined';
 }
 
-function noop() {}
+function noop$1() {}
 
 function removeInvalidChars(key) {
   return key.replace(/[.*"]/g, '_');
@@ -1902,8 +940,8 @@ function removeInvalidChars(key) {
 function getLatestNonXHRSpan(spans) {
   var latestSpan = null;
 
-  for (var _i2 = 0; _i2 < spans.length; _i2++) {
-    var span = spans[_i2];
+  for (var _i3 = 0; _i3 < spans.length; _i3++) {
+    var span = spans[_i3];
 
     if (String(span.type).indexOf('external') === -1 && (!latestSpan || latestSpan._end < span._end)) {
       latestSpan = span;
@@ -1916,8 +954,8 @@ function getLatestNonXHRSpan(spans) {
 function getEarliestSpan(spans) {
   var earliestSpan = spans[0];
 
-  for (var _i3 = 1; _i3 < spans.length; _i3++) {
-    var span = spans[_i3];
+  for (var _i4 = 1; _i4 < spans.length; _i4++) {
+    var span = spans[_i4];
 
     if (earliestSpan._start > span._start) {
       earliestSpan = span;
@@ -1927,27 +965,8 @@ function getEarliestSpan(spans) {
   return earliestSpan;
 }
 
-function getPageLoadMarks() {
-  var marks = getNavigationTimingMarks();
-  var paintMarks = getPaintTimingMarks();
-  var agent = {
-    timeToFirstByte: marks.responseStart,
-    domInteractive: marks.domInteractive,
-    domComplete: marks.domComplete
-  };
-
-  if (paintMarks['first-contentful-paint']) {
-    agent.firstContentfulPaint = paintMarks['first-contentful-paint'];
-  }
-
-  return {
-    navigationTiming: marks,
-    agent: agent
-  };
-}
-
 function now() {
-  return window.performance.now();
+  return PERF.now();
 }
 
 function getTime(time) {
@@ -1959,7 +978,7 @@ function getDuration(start, end) {
     return null;
   }
 
-  return parseFloat(end - start);
+  return parseInt(end - start);
 }
 
 function scheduleMacroTask(callback) {
@@ -1967,8 +986,145 @@ function scheduleMacroTask(callback) {
 }
 
 function scheduleMicroTask(callback) {
-  es6Promise_1.resolve().then(callback);
+  Promise$1.resolve().then(callback);
 }
+
+function isPerfTimelineSupported() {
+  return typeof PERF.getEntriesByType === 'function';
+}
+
+function isDefaultPort(port, protocol) {
+  switch (protocol) {
+    case 'http:':
+      return port === '80';
+
+    case 'https:':
+      return port === '443';
+  }
+
+  return true;
+}
+
+var RULES = [['#', 'hash'], ['?', 'query'], ['/', 'path'], ['@', 'auth', 1], [NaN, 'host', undefined, 1]];
+var PROTOCOL_REGEX = /^([a-z][a-z0-9.+-]*:)?(\/\/)?([\S\s]*)/i;
+
+var Url = function () {
+  function Url(url) {
+    var _this$extractProtocol = this.extractProtocol(url || ''),
+        protocol = _this$extractProtocol.protocol,
+        address = _this$extractProtocol.address,
+        slashes = _this$extractProtocol.slashes;
+
+    var relative = !protocol && !slashes;
+    var location = this.getLocation();
+    var instructions = RULES.slice();
+    address = address.replace('\\', '/');
+
+    if (!slashes) {
+      instructions[2] = [NaN, 'path'];
+    }
+
+    var index;
+
+    for (var i = 0; i < instructions.length; i++) {
+      var instruction = instructions[i];
+      var parse = instruction[0];
+      var key = instruction[1];
+
+      if (typeof parse === 'string') {
+        index = address.indexOf(parse);
+
+        if (~index) {
+          var instLength = instruction[2];
+
+          if (instLength) {
+            var newIndex = address.lastIndexOf(parse);
+            index = Math.max(index, newIndex);
+            this[key] = address.slice(0, index);
+            address = address.slice(index + instLength);
+          } else {
+            this[key] = address.slice(index);
+            address = address.slice(0, index);
+          }
+        }
+      } else {
+        this[key] = address;
+        address = '';
+      }
+
+      this[key] = this[key] || (relative && instruction[3] ? location[key] || '' : '');
+      if (instruction[3]) this[key] = this[key].toLowerCase();
+    }
+
+    if (relative && this.path.charAt(0) !== '/') {
+      this.path = '/' + this.path;
+    }
+
+    this.relative = relative;
+    this.protocol = protocol || location.protocol;
+    this.hostname = this.host;
+    this.port = '';
+
+    if (/:\d+$/.test(this.host)) {
+      var value = this.host.split(':');
+      var port = value.pop();
+      var hostname = value.join(':');
+
+      if (isDefaultPort(port, this.protocol)) {
+        this.host = hostname;
+      } else {
+        this.port = port;
+      }
+
+      this.hostname = hostname;
+    }
+
+    this.origin = this.protocol && this.host && this.protocol !== 'file:' ? this.protocol + '//' + this.host : 'null';
+    this.href = this.toString();
+  }
+
+  var _proto = Url.prototype;
+
+  _proto.toString = function toString() {
+    var result = this.protocol;
+    result += '//';
+
+    if (this.auth) {
+      var REDACTED = '[REDACTED]';
+      var userpass = this.auth.split(':');
+      var username = userpass[0] ? REDACTED : '';
+      var password = userpass[1] ? ':' + REDACTED : '';
+      result += username + password + '@';
+    }
+
+    result += this.host;
+    result += this.path;
+    result += this.query;
+    result += this.hash;
+    return result;
+  };
+
+  _proto.getLocation = function getLocation() {
+    var globalVar = {};
+
+    if (typeof window !== 'undefined') {
+      globalVar = window;
+    }
+
+    return globalVar.location;
+  };
+
+  _proto.extractProtocol = function extractProtocol(url) {
+    var match = PROTOCOL_REGEX.exec(url);
+    return {
+      protocol: match[1] ? match[1].toLowerCase() : '',
+      slashes: !!match[2],
+      address: match[3]
+    };
+  };
+
+  return Url;
+}();
 
 var SCHEDULE = 'schedule';
 var INVOKE = 'invoke';
@@ -1981,10 +1137,11 @@ var MAX_SPAN_DURATION = 5 * 60 * 1000;
 var PAGE_LOAD = 'page-load';
 var ROUTE_CHANGE = 'route-change';
 var TYPE_CUSTOM = 'custom';
+var USER_INTERACTION = 'user-interaction';
 var HTTP_REQUEST_TYPE = 'http-request';
 var TEMPORARY_TYPE = 'temporary';
 var NAME_UNKNOWN = 'Unknown';
-var TRANSACTION_TYPE_ORDER = [PAGE_LOAD, ROUTE_CHANGE, HTTP_REQUEST_TYPE, TYPE_CUSTOM, TEMPORARY_TYPE];
+var TRANSACTION_TYPE_ORDER = [PAGE_LOAD, ROUTE_CHANGE, USER_INTERACTION, HTTP_REQUEST_TYPE, TYPE_CUSTOM, TEMPORARY_TYPE];
 var USER_TIMING_THRESHOLD = 60;
 var TRANSACTION_START = 'transaction:start';
 var TRANSACTION_END = 'transaction:end';
@@ -1992,15 +1149,170 @@ var CONFIG_CHANGE = 'config:change';
 var XMLHTTPREQUEST = 'xmlhttprequest';
 var FETCH = 'fetch';
 var HISTORY = 'history';
+var EVENT_TARGET = 'eventtarget';
 var ERROR = 'error';
 var BEFORE_EVENT = ':before';
 var AFTER_EVENT = ':after';
 var LOCAL_CONFIG_KEY = 'elastic_apm_config';
-var KEYWORD_LIMIT = 1024;
-var SERVER_URL_PREFIX = '/intake/v2/rum/events';
+var LONG_TASK = 'longtask';
+var PAINT = 'paint';
+var MEASURE = 'measure';
+var NAVIGATION = 'navigation';
+var RESOURCE = 'resource';
+var FIRST_CONTENTFUL_PAINT = 'first-contentful-paint';
+var LARGEST_CONTENTFUL_PAINT = 'largest-contentful-paint';
 var BROWSER_RESPONSIVENESS_INTERVAL = 500;
-var BROWSER_RESPONSIVENESS_BUFFER = 3;
-var SIMILAR_SPAN_TO_TRANSACTION_RATIO = 0.05;
+var ERRORS = 'errors';
+var TRANSACTIONS = 'transactions';
+var KEYWORD_LIMIT = 1024;
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+var LEFT_SQUARE_BRACKET = 91;
+var RIGHT_SQUARE_BRACKET = 93;
+var EXTERNAL = 'external';
+var RESOURCE$1 = 'resource';
+
+function getPortNumber(port, protocol) {
+  if (port === '') {
+    port = protocol === 'http:' ? '80' : protocol === 'https:' ? '443' : '';
+  }
+
+  return port;
+}
+
+function getResponseContext(perfTimingEntry) {
+  var transferSize = perfTimingEntry.transferSize,
+      encodedBodySize = perfTimingEntry.encodedBodySize,
+      decodedBodySize = perfTimingEntry.decodedBodySize,
+      serverTiming = perfTimingEntry.serverTiming;
+  var respContext = {
+    transfer_size: transferSize,
+    encoded_body_size: encodedBodySize,
+    decoded_body_size: decodedBodySize
+  };
+  var serverTimingStr = getServerTimingInfo(serverTiming);
+
+  if (serverTimingStr) {
+    respContext.headers = {
+      'server-timing': serverTimingStr
+    };
+  }
+
+  return respContext;
+}
+
+function getDestination(parsedUrl, type) {
+  var port = parsedUrl.port,
+      protocol = parsedUrl.protocol,
+      hostname = parsedUrl.hostname,
+      host = parsedUrl.host;
+  var portNumber = getPortNumber(port, protocol);
+  var ipv6Hostname = hostname.charCodeAt(0) === LEFT_SQUARE_BRACKET && hostname.charCodeAt(hostname.length - 1) === RIGHT_SQUARE_BRACKET;
+  var address = hostname;
+
+  if (ipv6Hostname) {
+    address = hostname.slice(1, -1);
+  }
+
+  return {
+    service: {
+      name: protocol + '//' + host,
+      resource: hostname + ':' + portNumber,
+      type: type
+    },
+    address: address,
+    port: Number(portNumber)
+  };
+}
+
+function getResourceContext(data) {
+  var entry = data.entry,
+      url = data.url;
+  var parsedUrl = new Url(url);
+  var destination = getDestination(parsedUrl, RESOURCE$1);
+  return {
+    http: {
+      url: url,
+      response: getResponseContext(entry)
+    },
+    destination: destination
+  };
+}
+
+function getExternalContext(data) {
+  var url = data.url,
+      method = data.method,
+      target = data.target,
+      response = data.response;
+  var parsedUrl = new Url(url);
+  var destination = getDestination(parsedUrl, EXTERNAL);
+  var context = {
+    http: {
+      method: method,
+      url: parsedUrl.href
+    },
+    destination: destination
+  };
+  var statusCode;
+
+  if (target && typeof target.status !== 'undefined') {
+    statusCode = target.status;
+  } else if (response) {
+    statusCode = response.status;
+  }
+
+  context.http.status_code = statusCode;
+  return context;
+}
+
+function getPageContext() {
+  return {
+    page: {
+      referer: document.referrer,
+      url: window.location.href
+    }
+  };
+}
+function addSpanContext(span, data) {
+  if (!data) {
+    return;
+  }
+
+  var type = span.type;
+  var context;
+
+  switch (type) {
+    case EXTERNAL:
+      context = getExternalContext(data);
+      break;
+
+    case RESOURCE$1:
+      context = getResourceContext(data);
+      break;
+  }
+
+  span.addContext(context);
+}
+function addTransactionContext(transaction, _temp) {
+  var _ref = _temp === void 0 ? {} : _temp,
+      tags = _ref.tags,
+      configContext = _objectWithoutPropertiesLoose(_ref, ["tags"]);
+
+  var pageContext = getPageContext();
+  var responseContext = {};
+
+  if (transaction.type === PAGE_LOAD && isPerfTimelineSupported()) {
+    var entries = PERF.getEntriesByType(NAVIGATION);
+
+    if (entries && entries.length > 0) {
+      responseContext = {
+        response: getResponseContext(entries[0])
+      };
+    }
+  }
+
+  transaction.addContext(pageContext, responseContext, configContext);
+}
 
 var METADATA_MODEL = {
   service: {
@@ -2010,6 +1322,9 @@ var METADATA_MODEL = {
       version: [KEYWORD_LIMIT, true]
     },
     environment: true
+  },
+  labels: {
+    '*': true
   }
 };
 var RESPONSE_MODEL = {
@@ -2151,6 +1466,37 @@ function truncateModel(model, target, childTarget) {
   return target;
 }
 
+function _objectWithoutPropertiesLoose$1(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+var IGNORE_KEYS = ['stack', 'message'];
+
+function getErrorProperties(error) {
+  var propertyFound = false;
+  var properties = {};
+  Object.keys(error).forEach(function (key) {
+    if (IGNORE_KEYS.indexOf(key) >= 0) {
+      return;
+    }
+
+    var val = error[key];
+
+    if (val == null || typeof val === 'function') {
+      return;
+    }
+
+    if (typeof val === 'object') {
+      if (typeof val.toISOString !== 'function') return;
+      val = val.toISOString();
+    }
+
+    properties[key] = val;
+    propertyFound = true;
+  });
+
+  if (propertyFound) {
+    return properties;
+  }
+}
+
 var ErrorLogging = function () {
   function ErrorLogging(apmServer, configService, transactionService) {
     this._apmServer = apmServer;
@@ -2179,7 +1525,11 @@ var ErrorLogging = function () {
     if (error && typeof error === 'object') {
       errorMessage = errorMessage || error.message;
       errorType = error.name;
-      errorContext = this._getErrorProperties(error);
+      var customProperties = getErrorProperties(error);
+
+      if (customProperties) {
+        errorContext.custom = customProperties;
+      }
     }
 
     if (!errorType) {
@@ -2192,10 +1542,12 @@ var ErrorLogging = function () {
 
     var transactionContext = currentTransaction ? currentTransaction.context : {};
 
-    var configContext = this._configService.get('context');
+    var _this$_configService$ = this._configService.get('context'),
+        tags = _this$_configService$.tags,
+        configContext = _objectWithoutPropertiesLoose$1(_this$_configService$, ["tags"]);
 
-    var pageMetadata = getPageMetadata();
-    var context = merge({}, pageMetadata, transactionContext, configContext, errorContext);
+    var pageContext = getPageContext();
+    var context = merge({}, pageContext, transactionContext, configContext, errorContext);
     var errorObject = {
       id: generateRandomId(),
       culprit: culprit,
@@ -2222,7 +1574,7 @@ var ErrorLogging = function () {
     return truncateModel(ERROR_MODEL, errorObject);
   };
 
-  _proto.logErrorEvent = function logErrorEvent(errorEvent, sendImmediately) {
+  _proto.logErrorEvent = function logErrorEvent(errorEvent) {
     if (typeof errorEvent === 'undefined') {
       return;
     }
@@ -2233,11 +1585,7 @@ var ErrorLogging = function () {
       return;
     }
 
-    if (sendImmediately) {
-      return this._apmServer.sendErrors([errorObject]);
-    } else {
-      return this._apmServer.addError(errorObject);
-    }
+    this._apmServer.addError(errorObject);
   };
 
   _proto.registerListeners = function registerListeners() {
@@ -2279,27 +1627,6 @@ var ErrorLogging = function () {
     return this.logErrorEvent(errorEvent);
   };
 
-  _proto._getErrorProperties = function _getErrorProperties(error) {
-    var properties = {};
-    Object.keys(error).forEach(function (key) {
-      if (key === 'stack') return;
-      var val = error[key];
-      if (val === null) return;
-
-      switch (typeof val) {
-        case 'function':
-          return;
-
-        case 'object':
-          if (typeof val.toISOString !== 'function') return;
-          val = val.toISOString();
-      }
-
-      properties[key] = val;
-    });
-    return properties;
-  };
-
   return ErrorLogging;
 }();
 
@@ -2314,139 +1641,6 @@ var ErrorLogging$1 = {
     });
   }
 };
-
-function isDefaultPort(port, protocol) {
-  switch (protocol) {
-    case 'http:':
-      return port === '80';
-
-    case 'https:':
-      return port === '443';
-  }
-
-  return true;
-}
-
-var RULES = [['#', 'hash'], ['?', 'query'], ['/', 'path'], ['@', 'auth', 1], [NaN, 'host', undefined, 1]];
-var PROTOCOL_REGEX = /^([a-z][a-z0-9.+-]*:)?(\/\/)?([\S\s]*)/i;
-
-var Url = function () {
-  function Url(url) {
-    var _this$extractProtocol = this.extractProtocol(url || ''),
-        protocol = _this$extractProtocol.protocol,
-        address = _this$extractProtocol.address,
-        slashes = _this$extractProtocol.slashes;
-
-    var relative = !protocol && !slashes;
-    var location = this.getLocation();
-    var instructions = RULES.slice();
-    address = address.replace('\\', '/');
-
-    if (!slashes) {
-      instructions[2] = [NaN, 'path'];
-    }
-
-    var index;
-
-    for (var i = 0; i < instructions.length; i++) {
-      var instruction = instructions[i];
-      var parse = instruction[0];
-      var key = instruction[1];
-
-      if (typeof parse === 'string') {
-        index = address.indexOf(parse);
-
-        if (~index) {
-          var instLength = instruction[2];
-
-          if (instLength) {
-            var newIndex = address.lastIndexOf(parse);
-            index = Math.max(index, newIndex);
-            this[key] = address.slice(0, index);
-            address = address.slice(index + instLength);
-          } else {
-            this[key] = address.slice(index);
-            address = address.slice(0, index);
-          }
-        }
-      } else {
-        this[key] = address;
-        address = '';
-      }
-
-      this[key] = this[key] || (relative && instruction[3] ? location[key] || '' : '');
-      if (instruction[3]) this[key] = this[key].toLowerCase();
-    }
-
-    if (relative && this.path.charAt(0) !== '/') {
-      this.path = '/' + this.path;
-    }
-
-    this.relative = relative;
-    this.protocol = protocol || location.protocol;
-    this.hostname = this.host;
-    this.port = '';
-
-    if (/:\d+$/.test(this.host)) {
-      var value = this.host.split(':');
-      var port = value.pop();
-      var hostname = value.join(':');
-
-      if (isDefaultPort(port, this.protocol)) {
-        this.host = hostname;
-      } else {
-        this.port = port;
-      }
-
-      this.hostname = hostname;
-    }
-
-    this.origin = this.protocol && this.host && this.protocol !== 'file:' ? this.protocol + '//' + this.host : 'null';
-    this.href = this.toString();
-  }
-
-  var _proto = Url.prototype;
-
-  _proto.toString = function toString() {
-    var result = this.protocol;
-    result += '//';
-
-    if (this.auth) {
-      var REDACTED = '[REDACTED]';
-      var userpass = this.auth.split(':');
-      var username = userpass[0] ? REDACTED : '';
-      var password = userpass[1] ? ':' + REDACTED : '';
-      result += username + password + '@';
-    }
-
-    result += this.host;
-    result += this.path;
-    result += this.query;
-    result += this.hash;
-    return result;
-  };
-
-  _proto.getLocation = function getLocation() {
-    var globalVar = {};
-
-    if (typeof window !== 'undefined') {
-      globalVar = window;
-    }
-
-    return globalVar.location;
-  };
-
-  _proto.extractProtocol = function extractProtocol(url) {
-    var match = PROTOCOL_REGEX.exec(url);
-    return {
-      protocol: match[1] ? match[1].toLowerCase() : '',
-      slashes: !!match[2],
-      address: match[3]
-    };
-  };
-
-  return Url;
-}();
 
 var globalState = {
   fetchInProgress: false
@@ -2689,12 +1883,11 @@ function patchFetch(callback) {
       data: {
         target: request,
         method: request.method,
-        sync: false,
         url: url,
         aborted: false
       }
     };
-    return new es6Promise_1(function (resolve, reject) {
+    return new Promise$1(function (resolve, reject) {
       globalState.fetchInProgress = true;
       scheduleTask(task);
       var promise;
@@ -2748,6 +1941,144 @@ function patchHistory(callback) {
       nativePushState.apply(this, arguments);
     };
   }
+}
+
+var eventTypes = ['click'];
+var eventTypeSymbols = {};
+
+for (var i$1 = 0; i$1 < eventTypes.length; i$1++) {
+  var et = eventTypes[i$1];
+  eventTypeSymbols[et] = apmSymbol(et);
+}
+
+function shouldInstrumentEvent(target, eventType, listenerFn) {
+  return target instanceof Element && eventTypes.indexOf(eventType) >= 0 && typeof listenerFn === 'function';
+}
+
+function patchEventTarget(callback) {
+  if (!window.EventTarget) {
+    return;
+  }
+
+  var proto = window.EventTarget.prototype;
+  var nativeAddEventListener = proto[ADD_EVENT_LISTENER_STR];
+  var nativeRemoveEventListener = proto[REMOVE_EVENT_LISTENER_STR];
+
+  function findTaskIndex(existingTasks, eventType, listenerFn, capture) {
+    for (var _i = 0; _i < existingTasks.length; _i++) {
+      var task = existingTasks[_i];
+
+      if (task.eventType === eventType && task.listenerFn === listenerFn && task.capture === capture) {
+        return _i;
+      }
+    }
+
+    return -1;
+  }
+
+  function isCapture(options) {
+    var capture;
+
+    if (typeof options === 'boolean') {
+      capture = options;
+    } else {
+      capture = options ? !!options.capture : false;
+    }
+
+    return capture;
+  }
+
+  function createListenerWrapper(target, eventType, listenerFn, options) {
+    var eventSymbol = eventTypeSymbols[eventType];
+    if (!eventSymbol) return listenerFn;
+    var existingTasks = target[eventSymbol];
+    var capture = isCapture(options);
+
+    if (existingTasks) {
+      var taskIndex = findTaskIndex(existingTasks, eventType, listenerFn, capture);
+
+      if (taskIndex !== -1) {
+        var _task = existingTasks[taskIndex];
+        return _task.wrappingFn;
+      }
+    } else {
+      existingTasks = target[eventSymbol] = [];
+    }
+
+    var task = {
+      source: EVENT_TARGET,
+      target: target,
+      eventType: eventType,
+      listenerFn: listenerFn,
+      capture: capture,
+      wrappingFn: wrappingFn
+    };
+    existingTasks.push(task);
+
+    function wrappingFn() {
+      callback(SCHEDULE, task);
+      var result;
+
+      try {
+        result = listenerFn.apply(this, arguments);
+      } finally {
+        callback(INVOKE, task);
+      }
+
+      return result;
+    }
+
+    return wrappingFn;
+  }
+
+  function getWrappingFn(target, eventType, listenerFn, options) {
+    var eventSymbol = eventTypeSymbols[eventType];
+    var existingTasks = target[eventSymbol];
+
+    if (existingTasks) {
+      var capture = isCapture(options);
+      var taskIndex = findTaskIndex(existingTasks, eventType, listenerFn, capture);
+
+      if (taskIndex !== -1) {
+        var task = existingTasks[taskIndex];
+        existingTasks.splice(taskIndex, 1);
+
+        if (existingTasks.length === 0) {
+          target[eventSymbol] = undefined;
+        }
+
+        return task.wrappingFn;
+      }
+    }
+
+    return listenerFn;
+  }
+
+  proto[ADD_EVENT_LISTENER_STR] = function (eventType, listenerFn, optionsOrCapture) {
+    var target = this;
+
+    if (!shouldInstrumentEvent(target, eventType, listenerFn)) {
+      return nativeAddEventListener.apply(target, arguments);
+    }
+
+    var wrappingListenerFn = createListenerWrapper(target, eventType, listenerFn, optionsOrCapture);
+    var args = Array.prototype.slice.call(arguments);
+    args[1] = wrappingListenerFn;
+    return nativeAddEventListener.apply(target, args);
+  };
+
+  proto[REMOVE_EVENT_LISTENER_STR] = function (eventType, listenerFn, optionsOrCapture) {
+    var target = this;
+
+    if (!shouldInstrumentEvent(target, eventType, listenerFn)) {
+      return nativeRemoveEventListener.apply(target, arguments);
+    }
+
+    var wrappingFn = getWrappingFn(target, eventType, listenerFn, optionsOrCapture);
+    var args = Array.prototype.slice.call(arguments);
+    args[1] = wrappingFn;
+    return nativeRemoveEventListener.apply(target, args);
+  };
 }
 
 var EventHandler = function () {
@@ -2814,9 +2145,72 @@ function patchAll() {
     patchHistory(function (event, task) {
       patchEventHandler.send(HISTORY, [event, task]);
     });
+    patchEventTarget(function (event, task) {
+      patchEventHandler.send(EVENT_TARGET, [event, task]);
+    });
   }
 
   return patchEventHandler;
+}
+
+var BROWSER_RESPONSIVENESS_BUFFER = 3;
+var SIMILAR_SPAN_TO_TRANSACTION_RATIO = 0.05;
+var TRANSACTION_DURATION_THRESHOLD = 60000;
+function groupSmallContinuouslySimilarSpans(originalSpans, transDuration, threshold) {
+  originalSpans.sort(function (spanA, spanB) {
+    return spanA._start - spanB._start;
+  });
+  var spans = [];
+  var lastCount = 1;
+  originalSpans.forEach(function (span, index) {
+    if (spans.length === 0) {
+      spans.push(span);
+    } else {
+      var lastSpan = spans[spans.length - 1];
+      var isContinuouslySimilar = lastSpan.type === span.type && lastSpan.subtype === span.subtype && lastSpan.action === span.action && lastSpan.name === span.name && span.duration() / transDuration < threshold && (span._start - lastSpan._end) / transDuration < threshold;
+      var isLastSpan = originalSpans.length === index + 1;
+
+      if (isContinuouslySimilar) {
+        lastCount++;
+        lastSpan._end = span._end;
+      }
+
+      if (lastCount > 1 && (!isContinuouslySimilar || isLastSpan)) {
+        lastSpan.name = lastCount + 'x ' + lastSpan.name;
+        lastCount = 1;
+      }
+
+      if (!isContinuouslySimilar) {
+        spans.push(span);
+      }
+    }
+  });
+  return spans;
+}
+function adjustTransactionSpans(transaction) {
+  if (transaction.sampled) {
+    var filterdSpans = transaction.spans.filter(function (span) {
+      return span.duration() > 0 && span._start >= transaction._start && span._end <= transaction._end;
+    });
+
+    if (transaction.isManaged()) {
+      var duration = transaction.duration();
+      var similarSpans = groupSmallContinuouslySimilarSpans(filterdSpans, duration, SIMILAR_SPAN_TO_TRANSACTION_RATIO);
+      transaction.spans = similarSpans;
+    } else {
+      transaction.spans = filterdSpans;
+    }
+  } else {
+    transaction.resetSpans();
+  }
+
+  return transaction;
+}
+function checkBrowserResponsiveness(transaction, interval, buffer) {
+  var counter = transaction.browserResponsivenessCounter;
+  var duration = transaction.duration();
+  var expectedCount = Math.floor(duration / interval);
+  return counter + buffer >= expectedCount;
 }
 
 var PerformanceMonitoring = function () {
@@ -2855,6 +2249,44 @@ var PerformanceMonitoring = function () {
     if (flags[FETCH]) {
       patchEventHandler.observe(FETCH, this.getFetchSub());
     }
+
+    if (flags[EVENT_TARGET]) {
+      patchEventHandler.observe(EVENT_TARGET, this.getEventTargetSub());
+    }
+  };
+
+  _proto.getEventTargetSub = function getEventTargetSub() {
+    var transactionService = this._transactionService;
+    return function (event, task) {
+      if (event === SCHEDULE && task.source === EVENT_TARGET && task.eventType === 'click') {
+        var target = task.target;
+        var name = target.getAttribute('name');
+        var additionalInfo = '';
+
+        if (name) {
+          additionalInfo = "[\"" + name + "\"]";
+        }
+
+        var tagName = target.tagName.toLowerCase();
+        var tr = transactionService.startTransaction("Click - " + tagName + additionalInfo, USER_INTERACTION, {
+          managed: true,
+          canReuse: true,
+          reuseThreshold: 100
+        });
+
+        if (tr) {
+          var classes = target.getAttribute('class');
+
+          if (classes) {
+            tr.addContext({
+              custom: {
+                classes: classes
+              }
+            });
+          }
+        }
+      }
+    };
   };
 
   _proto.getHistorySub = function getHistorySub() {
@@ -2919,9 +2351,14 @@ var PerformanceMonitoring = function () {
 
       if (isDtEnabled && isSameOrigin && target) {
         this.injectDtHeader(span, target);
+      } else {
+        this._logginService.debug("Could not inject distributed tracing header to the request origin ('" + requestUrl.origin + "') from the current origin ('" + currentUrl.origin + "')");
       }
 
-      span.sync = data.sync;
+      if (data.sync) {
+        span.sync = data.sync;
+      }
+
       data.span = span;
       task.id = taskId;
     } else if (event === INVOKE) {
@@ -2962,8 +2399,6 @@ var PerformanceMonitoring = function () {
   };
 
   _proto.filterTransaction = function filterTransaction(tr) {
-    var transactionDurationThreshold = this._configService.get('transactionDurationThreshold');
-
     var duration = tr.duration();
 
     if (!duration) {
@@ -2982,45 +2417,37 @@ var PerformanceMonitoring = function () {
       return false;
     }
 
-    if (duration > transactionDurationThreshold) {
-      {
-        this._logginService.debug("transaction(" + tr.id + ", " + tr.name + ") was discarded! Transaction duration (" + duration + ") is greater than the transactionDurationThreshold configuration (" + transactionDurationThreshold + ")");
-      }
-
-      return false;
-    }
-
-    if (!tr.sampled) {
-      tr.resetSpans();
-    }
-
-    if (tr.options.checkBrowserResponsiveness) {
-      var wasBrowserResponsive = this.checkBrowserResponsiveness(tr, BROWSER_RESPONSIVENESS_INTERVAL, BROWSER_RESPONSIVENESS_BUFFER);
-
-      if (!wasBrowserResponsive) {
+    if (tr.isManaged()) {
+      if (duration > TRANSACTION_DURATION_THRESHOLD) {
         {
-          this._logginService.debug("transaction(" + tr.id + ", " + tr.name + ") was discarded! Browser was not responsive enough during the transaction.", ' duration:', duration, ' browserResponsivenessCounter:', tr.browserResponsivenessCounter);
+          this._logginService.debug("transaction(" + tr.id + ", " + tr.name + ") was discarded! Transaction duration (" + duration + ") is greater than managed transaction threshold (" + TRANSACTION_DURATION_THRESHOLD + ")");
         }
 
         return false;
       }
+
+      if (tr.sampled && tr.spans.length === 0) {
+        {
+          this._logginService.debug("transaction(" + tr.id + ", " + tr.name + ") was discarded! Transaction does not have any spans");
+        }
+
+        return false;
+      }
+
+      if (tr.type !== PAGE_LOAD) {
+        var wasBrowserResponsive = checkBrowserResponsiveness(tr, BROWSER_RESPONSIVENESS_INTERVAL, BROWSER_RESPONSIVENESS_BUFFER);
+
+        if (!wasBrowserResponsive) {
+          {
+            this._logginService.debug("transaction(" + tr.id + ", " + tr.name + ") was discarded! Browser was not responsive enough during the transaction.", ' duration:', duration, ' browserResponsivenessCounter:', tr.browserResponsivenessCounter);
+          }
+
+          return false;
+        }
+      }
     }
 
     return true;
-  };
-
-  _proto.prepareTransaction = function prepareTransaction(transaction) {
-    transaction.spans.sort(function (spanA, spanB) {
-      return spanA._start - spanB._start;
-    });
-
-    if (this._configService.get('groupSimilarSpans')) {
-      transaction.spans = this.groupSmallContinuouslySimilarSpans(transaction, SIMILAR_SPAN_TO_TRANSACTION_RATIO);
-    }
-
-    transaction.spans = transaction.spans.filter(function (span) {
-      return span.duration() > 0 && span._start >= transaction._start && span._end <= transaction._end;
-    });
   };
 
   _proto.createTransactionDataModel = function createTransactionDataModel(transaction) {
@@ -3033,10 +2460,10 @@ var PerformanceMonitoring = function () {
         trace_id: transaction.traceId,
         name: span.name,
         type: span.type,
-        subType: span.subType,
+        subtype: span.subtype,
         action: span.action,
         sync: span.sync,
-        start: span._start - transactionStart,
+        start: parseInt(span._start - transactionStart),
         duration: span.duration(),
         context: span.context
       };
@@ -3061,57 +2488,12 @@ var PerformanceMonitoring = function () {
   };
 
   _proto.createTransactionPayload = function createTransactionPayload(transaction) {
-    this.prepareTransaction(transaction);
-    var filtered = this.filterTransaction(transaction);
+    var adjustedTransaction = adjustTransactionSpans(transaction);
+    var filtered = this.filterTransaction(adjustedTransaction);
 
     if (filtered) {
       return this.createTransactionDataModel(transaction);
     }
-  };
-
-  _proto.convertTransactionsToServerModel = function convertTransactionsToServerModel(transactions) {
-    var _this4 = this;
-
-    return transactions.map(function (tr) {
-      return _this4.createTransactionDataModel(tr);
-    });
-  };
-
-  _proto.groupSmallContinuouslySimilarSpans = function groupSmallContinuouslySimilarSpans(transaction, threshold) {
-    var transDuration = transaction.duration();
-    var spans = [];
-    var lastCount = 1;
-    transaction.spans.forEach(function (span, index) {
-      if (spans.length === 0) {
-        spans.push(span);
-      } else {
-        var lastSpan = spans[spans.length - 1];
-        var isContinuouslySimilar = lastSpan.type === span.type && lastSpan.subType === span.subType && lastSpan.action === span.action && lastSpan.name === span.name && span.duration() / transDuration < threshold && (span._start - lastSpan._end) / transDuration < threshold;
-        var isLastSpan = transaction.spans.length === index + 1;
-
-        if (isContinuouslySimilar) {
-          lastCount++;
-          lastSpan._end = span._end;
-        }
-
-        if (lastCount > 1 && (!isContinuouslySimilar || isLastSpan)) {
-          lastSpan.name = lastCount + 'x ' + lastSpan.name;
-          lastCount = 1;
-        }
-
-        if (!isContinuouslySimilar) {
-          spans.push(span);
-        }
-      }
-    });
-    return spans;
-  };
-
-  _proto.checkBrowserResponsiveness = function checkBrowserResponsiveness(transaction, interval, buffer) {
-    var counter = transaction.browserResponsivenessCounter;
-    var duration = transaction.duration();
-    var expectedCount = Math.floor(duration / interval);
-    return counter + buffer >= expectedCount;
   };
 
   return PerformanceMonitoring;
@@ -3150,11 +2532,6 @@ var SpanBase = function () {
     if (!this.context) {
       this.context = {};
     }
-  };
-
-  _proto.addTags = function addTags(tags) {
-    console.warn('addTags deprecated, please use addLabels');
-    this.addLabels(tags);
   };
 
   _proto.addLabels = function addLabels(tags) {
@@ -3204,141 +2581,6 @@ var SpanBase = function () {
   return SpanBase;
 }();
 
-var LEFT_SQUARE_BRACKET = 91;
-var RIGHT_SQUARE_BRACKET = 93;
-var EXTERNAL = 'external';
-var RESOURCE = 'resource';
-
-function getPortNumber(port, protocol) {
-  if (port === '') {
-    port = protocol === 'http:' ? '80' : protocol === 'https:' ? '443' : '';
-  }
-
-  return port;
-}
-
-function getResponseContext(perfTimingEntry) {
-  var transferSize = perfTimingEntry.transferSize,
-      encodedBodySize = perfTimingEntry.encodedBodySize,
-      decodedBodySize = perfTimingEntry.decodedBodySize,
-      serverTiming = perfTimingEntry.serverTiming;
-  var respContext = {
-    transfer_size: transferSize,
-    encoded_body_size: encodedBodySize,
-    decoded_body_size: decodedBodySize
-  };
-  var serverTimingStr = getServerTimingInfo(serverTiming);
-
-  if (serverTimingStr) {
-    respContext.headers = {
-      'server-timing': serverTimingStr
-    };
-  }
-
-  return respContext;
-}
-
-function getDestination(parsedUrl, type) {
-  var port = parsedUrl.port,
-      protocol = parsedUrl.protocol,
-      hostname = parsedUrl.hostname,
-      host = parsedUrl.host;
-  var portNumber = getPortNumber(port, protocol);
-  var ipv6Hostname = hostname.charCodeAt(0) === LEFT_SQUARE_BRACKET && hostname.charCodeAt(hostname.length - 1) === RIGHT_SQUARE_BRACKET;
-  var address = hostname;
-
-  if (ipv6Hostname) {
-    address = hostname.slice(1, -1);
-  }
-
-  return {
-    service: {
-      name: protocol + '//' + host,
-      resource: hostname + ':' + portNumber,
-      type: type
-    },
-    address: address,
-    port: Number(portNumber)
-  };
-}
-
-function getResourceContext(data) {
-  var entry = data.entry,
-      url = data.url;
-  var parsedUrl = new Url(url);
-  var destination = getDestination(parsedUrl, RESOURCE);
-  return {
-    http: {
-      url: url,
-      response: getResponseContext(entry)
-    },
-    destination: destination
-  };
-}
-
-function getExternalContext(data) {
-  var url = data.url,
-      method = data.method,
-      target = data.target,
-      response = data.response;
-  var parsedUrl = new Url(url);
-  var destination = getDestination(parsedUrl, EXTERNAL);
-  var context = {
-    http: {
-      method: method,
-      url: parsedUrl.href
-    },
-    destination: destination
-  };
-  var statusCode;
-
-  if (target && typeof target.status !== 'undefined') {
-    statusCode = target.status;
-  } else if (response) {
-    statusCode = response.status;
-  }
-
-  context.http.status_code = statusCode;
-  return context;
-}
-
-function addSpanContext(span, data) {
-  if (!data) {
-    return;
-  }
-
-  var type = span.type;
-  var context;
-
-  switch (type) {
-    case EXTERNAL:
-      context = getExternalContext(data);
-      break;
-
-    case RESOURCE:
-      context = getResourceContext(data);
-      break;
-  }
-
-  span.addContext(context);
-}
-function addTransactionContext(transaction, configContext) {
-  var pageContext = getPageMetadata();
-  var responseContext = {};
-
-  if (transaction.type === PAGE_LOAD && typeof performance.getEntriesByType === 'function') {
-    var entries = performance.getEntriesByType('navigation');
-
-    if (entries && entries.length > 0) {
-      responseContext = {
-        response: getResponseContext(entries[0])
-      };
-    }
-  }
-
-  transaction.addContext(pageContext, responseContext, configContext);
-}
-
 function _inheritsLoose(subClass, superClass) { subClass.prototype = Object.create(superClass.prototype); subClass.prototype.constructor = subClass; subClass.__proto__ = superClass; }
 
 var Span = function (_SpanBase) {
@@ -3349,14 +2591,14 @@ var Span = function (_SpanBase) {
 
     _this = _SpanBase.call(this, name, type, options) || this;
     _this.parentId = _this.options.parentId;
-    _this.subType = undefined;
+    _this.subtype = undefined;
     _this.action = undefined;
 
     if (_this.type.indexOf('.') !== -1) {
       var fields = _this.type.split('.', 3);
 
       _this.type = fields[0];
-      _this.subType = fields[1];
+      _this.subtype = fields[1];
       _this.action = fields[2];
     }
 
@@ -3439,11 +2681,11 @@ function groupSpans(transaction) {
     }
 
     var type = span.type,
-        subType = span.subType;
+        subtype = span.subtype;
     var key = type;
 
-    if (subType) {
-      key += '.' + subType;
+    if (subtype) {
+      key += '.' + subtype;
     }
 
     if (!spanMap[key]) {
@@ -3477,7 +2719,7 @@ function getSpanBreakdown(transactionDetails, _ref) {
 
 function captureBreakdown(transaction, timings) {
   if (timings === void 0) {
-    timings = window.performance.timing;
+    timings = PERF.timing;
   }
 
   var breakdowns = [];
@@ -3584,11 +2826,8 @@ var Transaction = function (_SpanBase) {
     });
   };
 
-  _proto.canReuse = function canReuse(threshold) {
-    if (threshold === void 0) {
-      threshold = REUSABILITY_THRESHOLD;
-    }
-
+  _proto.canReuse = function canReuse() {
+    var threshold = this.options.reuseThreshold || REUSABILITY_THRESHOLD;
     return !!this.options.canReuse && !this.ended && now() - this._start < threshold;
   };
 
@@ -3691,8 +2930,126 @@ var Transaction = function (_SpanBase) {
     delete this._activeSpans[span.id];
   };
 
+  _proto.isManaged = function isManaged() {
+    return !!this.options.managed;
+  };
+
   return Transaction;
 }(SpanBase);
+
+function createLongTaskSpans(longtasks) {
+  var spans = [];
+
+  for (var i = 0; i < longtasks.length; i++) {
+    var _longtasks$i = longtasks[i],
+        name = _longtasks$i.name,
+        startTime = _longtasks$i.startTime,
+        duration = _longtasks$i.duration,
+        attribution = _longtasks$i.attribution;
+    var end = startTime + duration;
+    var kind = LONG_TASK;
+    var span = new Span("Longtask(" + name + ")", kind, {
+      startTime: startTime
+    });
+
+    if (attribution.length > 0) {
+      var _attribution$ = attribution[0],
+          _name = _attribution$.name,
+          containerType = _attribution$.containerType,
+          containerName = _attribution$.containerName,
+          containerId = _attribution$.containerId;
+      var customContext = {
+        attribution: _name,
+        type: containerType
+      };
+
+      if (containerName) {
+        customContext.name = containerName;
+      }
+
+      if (containerId) {
+        customContext.id = containerId;
+      }
+
+      span.addContext({
+        custom: customContext
+      });
+    }
+
+    span.end(end);
+    spans.push(span);
+  }
+
+  return spans;
+}
+
+function captureObserverEntries(list, _ref) {
+  var capturePaint = _ref.capturePaint;
+  var longtaskEntries = list.getEntriesByType(LONG_TASK);
+  var longTaskSpans = createLongTaskSpans(longtaskEntries);
+  var result = {
+    spans: longTaskSpans,
+    marks: {}
+  };
+
+  if (!capturePaint) {
+    return result;
+  }
+
+  var lcpEntries = list.getEntriesByType(LARGEST_CONTENTFUL_PAINT);
+  var lastLcpEntry = lcpEntries[lcpEntries.length - 1];
+
+  if (lastLcpEntry) {
+    var lcp = lastLcpEntry.renderTime || lastLcpEntry.loadTimes;
+    result.marks.largestContentfulPaint = parseInt(lcp);
+  }
+
+  var timing = PERF.timing;
+  var unloadDiff = timing.fetchStart - timing.navigationStart;
+  var fcpEntry = list.getEntriesByName(FIRST_CONTENTFUL_PAINT)[0];
+
+  if (fcpEntry) {
+    var fcp = unloadDiff >= 0 ? fcpEntry.startTime - unloadDiff : fcpEntry.startTime;
+    result.marks.firstContentfulPaint = parseInt(fcp);
+  }
+
+  return result;
+}
+var PerfEntryRecorder = function () {
+  function PerfEntryRecorder(callback) {
+    this.po = {
+      observe: noop$1,
+      disconnect: noop$1
+    };
+
+    if (window.PerformanceObserver) {
+      this.po = new PerformanceObserver(callback);
+    }
+  }
+
+  var _proto = PerfEntryRecorder.prototype;
+
+  _proto.start = function start(type) {
+    try {
+      var buffered = true;
+
+      if (type === LONG_TASK) {
+        buffered = false;
+      }
+
+      this.po.observe({
+        type: type,
+        buffered: buffered
+      });
+    } catch (_) {}
+  };
+
+  _proto.stop = function stop() {
+    this.po.disconnect();
+  };
+
+  return PerfEntryRecorder;
+}();
 
 var eventPairs = [['domainLookupStart', 'domainLookupEnd', 'Domain lookup'], ['connectStart', 'connectEnd', 'Making a connection to the server'], ['requestStart', 'responseEnd', 'Requesting and receiving the document'], ['domLoading', 'domInteractive', 'Parsing the document, executing sync. scripts'], ['domContentLoadedEventStart', 'domContentLoadedEventEnd', 'Fire "DOMContentLoaded" event'], ['loadEventStart', 'loadEventEnd', 'Fire "load" event']];
 
@@ -3826,14 +3183,41 @@ function getApiSpanNames(_ref) {
   for (var i = 0; i < spans.length; i++) {
     var span = spans[i];
 
-    if (span.type === 'external' && span.subType === 'http') {
-      continue;
+    if (span.type === 'external' && span.subtype === 'http') {
+      apiCalls.push(span.name.split(' ')[1]);
     }
-
-    apiCalls.push(span.name.split(' ')[1]);
   }
 
   return apiCalls;
+}
+
+var NAVIGATION_TIMING_MARKS = ['fetchStart', 'domainLookupStart', 'domainLookupEnd', 'connectStart', 'connectEnd', 'requestStart', 'responseStart', 'responseEnd', 'domLoading', 'domInteractive', 'domContentLoadedEventStart', 'domContentLoadedEventEnd', 'domComplete', 'loadEventStart', 'loadEventEnd'];
+
+function getNavigationTimingMarks() {
+  var timing = PERF.timing;
+  var fetchStart = timing.fetchStart;
+  var marks = {};
+  NAVIGATION_TIMING_MARKS.forEach(function (timingKey) {
+    var m = timing[timingKey];
+
+    if (m && m >= fetchStart) {
+      marks[timingKey] = parseInt(m - fetchStart);
+    }
+  });
+  return marks;
+}
+
+function getPageLoadMarks() {
+  var marks = getNavigationTimingMarks();
+  var agent = {
+    timeToFirstByte: marks.responseStart,
+    domInteractive: marks.domInteractive,
+    domComplete: marks.domComplete
+  };
+  return {
+    navigationTiming: marks,
+    agent: agent
+  };
 }
 
 function captureNavigation(transaction) {
@@ -3841,7 +3225,6 @@ function captureNavigation(transaction) {
     return;
   }
 
-  var perf = window.performance;
   var trEnd = transaction._end;
 
   if (transaction.type === PAGE_LOAD) {
@@ -3854,7 +3237,7 @@ function captureNavigation(transaction) {
 
     var trStart = 0;
     transaction._start = trStart;
-    var timings = perf.timing;
+    var timings = PERF.timing;
     createNavigationTimingSpans(timings, timings.fetchStart, trStart, trEnd).forEach(function (span) {
       span.traceId = transaction.traceId;
       span.sampled = transaction.sampled;
@@ -3868,14 +3251,14 @@ function captureNavigation(transaction) {
     transaction.addMarks(getPageLoadMarks());
   }
 
-  if (typeof perf.getEntriesByType === 'function') {
+  if (isPerfTimelineSupported()) {
     var _trStart = transaction._start;
-    var resourceEntries = perf.getEntriesByType('resource');
+    var resourceEntries = PERF.getEntriesByType(RESOURCE);
     var apiCalls = getApiSpanNames(transaction);
     createResourceTimingSpans(resourceEntries, apiCalls, _trStart, trEnd).forEach(function (span) {
       return transaction.spans.push(span);
     });
-    var userEntries = perf.getEntriesByType('measure');
+    var userEntries = PERF.getEntriesByType(MEASURE);
     createUserTimingSpans(userEntries, _trStart, trEnd).forEach(function (span) {
       return transaction.spans.push(span);
     });
@@ -3884,10 +3267,37 @@ function captureNavigation(transaction) {
 
 var TransactionService = function () {
   function TransactionService(logger, config) {
+    var _this = this;
+
     this._config = config;
     this._logger = logger;
     this.currentTransaction = undefined;
     this.respIntervalId = undefined;
+    this.recorder = new PerfEntryRecorder(function (list) {
+      var tr = _this.getCurrentTransaction();
+
+      if (tr && tr.captureTimings) {
+        var _tr$spans;
+
+        var capturePaint = false;
+
+        if (tr.type === PAGE_LOAD) {
+          capturePaint = true;
+        }
+
+        var _captureObserverEntri = captureObserverEntries(list, {
+          capturePaint: capturePaint
+        }),
+            spans = _captureObserverEntri.spans,
+            marks = _captureObserverEntri.marks;
+
+        (_tr$spans = tr.spans).push.apply(_tr$spans, spans);
+
+        tr.addMarks({
+          agent: marks
+        });
+      }
+    });
   }
 
   var _proto = TransactionService.prototype;
@@ -3916,17 +3326,17 @@ var TransactionService = function () {
   };
 
   _proto.ensureRespInterval = function ensureRespInterval(checkBrowserResponsiveness) {
-    var _this = this;
+    var _this2 = this;
 
     var clearRespInterval = function clearRespInterval() {
-      clearInterval(_this.respIntervalId);
-      _this.respIntervalId = undefined;
+      clearInterval(_this2.respIntervalId);
+      _this2.respIntervalId = undefined;
     };
 
     if (checkBrowserResponsiveness) {
       if (typeof this.respIntervalId === 'undefined') {
         this.respIntervalId = setInterval(function () {
-          var tr = _this.getCurrentTransaction();
+          var tr = _this2.getCurrentTransaction();
 
           if (tr) {
             tr.browserResponsivenessCounter++;
@@ -3952,8 +3362,7 @@ var TransactionService = function () {
         pageLoadTraceId: config.pageLoadTraceId,
         pageLoadSampled: config.pageLoadSampled,
         pageLoadSpanId: config.pageLoadSpanId,
-        pageLoadTransactionName: config.pageLoadTransactionName,
-        checkBrowserResponsiveness: config.checkBrowserResponsiveness
+        pageLoadTransactionName: config.pageLoadTransactionName
       }, perfOptions);
     }
 
@@ -3962,6 +3371,7 @@ var TransactionService = function () {
 
   _proto.startManagedTransaction = function startManagedTransaction(name, type, perfOptions) {
     var tr = this.getCurrentTransaction();
+    var isRedefined = false;
 
     if (!tr) {
       tr = this.ensureCurrentTransaction(name, type, perfOptions);
@@ -3979,6 +3389,7 @@ var TransactionService = function () {
       }
 
       tr.redefine(name, redefineType, perfOptions);
+      isRedefined = true;
     } else {
       {
         this._logger.debug("ending previous transaction(" + tr.id + ", " + tr.name + ")", tr);
@@ -3988,10 +3399,15 @@ var TransactionService = function () {
       tr = this.ensureCurrentTransaction(name, type, perfOptions);
     }
 
-    tr.captureTimings = true;
+    var checkBrowserResponsiveness = true;
 
     if (tr.type === PAGE_LOAD) {
-      tr.options.checkBrowserResponsiveness = false;
+      if (!isRedefined) {
+        this.recorder.start(LARGEST_CONTENTFUL_PAINT);
+        this.recorder.start(PAINT);
+      }
+
+      checkBrowserResponsiveness = false;
 
       if (perfOptions.pageLoadTraceId) {
         tr.traceId = perfOptions.pageLoadTraceId;
@@ -4006,52 +3422,69 @@ var TransactionService = function () {
       }
     }
 
-    this.ensureRespInterval(tr.options.checkBrowserResponsiveness);
+    if (!isRedefined && this._config.get('monitorLongtasks')) {
+      this.recorder.start(LONG_TASK);
+    }
+
+    if (tr.sampled) {
+      tr.captureTimings = true;
+    }
+
+    this.ensureRespInterval(checkBrowserResponsiveness);
     return tr;
   };
 
   _proto.startTransaction = function startTransaction(name, type, options) {
-    var _this2 = this;
+    var _this3 = this;
 
     var perfOptions = this.createOptions(options);
     var tr;
+    var fireOnstartHook = true;
 
     if (perfOptions.managed) {
+      var current = this.currentTransaction;
       tr = this.startManagedTransaction(name, type, perfOptions);
+
+      if (current === tr) {
+        fireOnstartHook = false;
+      }
     } else {
       tr = new Transaction(name, type, perfOptions);
     }
 
     tr.onEnd = function () {
-      return _this2.handleTransactionEnd(tr);
+      return _this3.handleTransactionEnd(tr);
     };
 
-    {
-      this._logger.debug("startTransaction(" + tr.id + ", " + tr.name + ", " + tr.type + ")");
-    }
+    if (fireOnstartHook) {
+      {
+        this._logger.debug("startTransaction(" + tr.id + ", " + tr.name + ", " + tr.type + ")");
+      }
 
-    this._config.events.send(TRANSACTION_START, [tr]);
+      this._config.events.send(TRANSACTION_START, [tr]);
+    }
 
     return tr;
   };
 
   _proto.handleTransactionEnd = function handleTransactionEnd(tr) {
-    var _this3 = this;
+    var _this4 = this;
 
-    return es6Promise_1.resolve().then(function () {
+    this.recorder.stop();
+    return Promise$1.resolve().then(function () {
       var name = tr.name,
           type = tr.type;
 
-      if (_this3.shouldIgnoreTransaction(name) || type === TEMPORARY_TYPE) {
+      if (_this4.shouldIgnoreTransaction(name) || type === TEMPORARY_TYPE) {
         {
-          _this3._logger.debug("transaction(" + tr.id + ", " + name + ", " + type + ") is ignored");
+          _this4._logger.debug("transaction(" + tr.id + ", " + name + ", " + type + ") is ignored");
         }
 
         return;
       }
 
       if (type === PAGE_LOAD) {
-        var pageLoadTransactionName = _this3._config.get('pageLoadTransactionName');
+        var pageLoadTransactionName = _this4._config.get('pageLoadTransactionName');
 
         if (name === NAME_UNKNOWN && pageLoadTransactionName) {
           tr.name = pageLoadTransactionName;
@@ -4060,26 +3493,26 @@ var TransactionService = function () {
 
       captureNavigation(tr);
 
-      _this3.adjustTransactionTime(tr);
+      _this4.adjustTransactionTime(tr);
 
-      var breakdownMetrics = _this3._config.get('breakdownMetrics');
+      var breakdownMetrics = _this4._config.get('breakdownMetrics');
 
       if (breakdownMetrics) {
         tr.captureBreakdown();
       }
 
-      var configContext = _this3._config.get('context');
+      var configContext = _this4._config.get('context');
 
       addTransactionContext(tr, configContext);
 
-      _this3._config.events.send(TRANSACTION_END, [tr]);
+      _this4._config.events.send(TRANSACTION_END, [tr]);
 
       {
-        _this3._logger.debug("end transaction(" + tr.id + ", " + tr.name + ")", tr);
+        _this4._logger.debug("end transaction(" + tr.id + ", " + tr.name + ")", tr);
       }
     }, function (err) {
       {
-        _this3._logger.debug("error ending transaction(" + tr.id + ", " + tr.name + ")", err);
+        _this4._logger.debug("error ending transaction(" + tr.id + ", " + tr.name + ")", err);
       }
     });
   };
@@ -4203,7 +3636,10 @@ var PerformanceMonitoring$1 = {
 
 var Queue = function () {
   function Queue(onFlush, opts) {
-    if (!opts) opts = {};
+    if (opts === void 0) {
+      opts = {};
+    }
+
     this.onFlush = onFlush;
     this.items = [];
     this.queueLimit = opts.queueLimit || -1;
@@ -4217,14 +3653,8 @@ var Queue = function () {
     var _this = this;
 
     this.timeoutId = setTimeout(function () {
-      _this.flush();
+      return _this.flush();
     }, this.flushInterval);
-  };
-
-  _proto.flush = function flush() {
-    this.onFlush(this.items);
-
-    this._clear();
   };
 
   _proto._clear = function _clear() {
@@ -4234,6 +3664,12 @@ var Queue = function () {
     }
 
     this.items = [];
+  };
+
+  _proto.flush = function flush() {
+    this.onFlush(this.items);
+
+    this._clear();
   };
 
   _proto.add = function add(item) {
@@ -4252,22 +3688,13 @@ var Queue = function () {
 }();
 
 function throttle(fn, onThrottle, opts) {
-  var context = opts.context || this;
+  var context = this;
   var limit = opts.limit;
   var interval = opts.interval;
-
-  var countFn = opts.countFn || function () {};
-
   var counter = 0;
   var timeoutId;
   return function () {
-    var count = typeof countFn === 'function' && countFn.apply(context, arguments);
-
-    if (typeof count !== 'number') {
-      count = 1;
-    }
-
-    counter = counter + count;
+    counter++;
 
     if (typeof timeoutId === 'undefined') {
       timeoutId = setTimeout(function () {
@@ -4276,10 +3703,8 @@ function throttle(fn, onThrottle, opts) {
       }, interval);
     }
 
-    if (counter > limit) {
-      if (typeof onThrottle === 'function') {
-        return onThrottle.apply(context, arguments);
-      }
+    if (counter > limit && typeof onThrottle === 'function') {
+      return onThrottle.apply(context, arguments);
     } else {
       return fn.apply(context, arguments);
     }
@@ -4296,14 +3721,286 @@ var NDJSON = function () {
   return NDJSON;
 }();
 
+var COMPRESSED_NAV_TIMING_MARKS = ['fs', 'ls', 'le', 'cs', 'ce', 'qs', 'rs', 're', 'dl', 'di', 'ds', 'de', 'dc', 'es', 'ee'];
+
+function compressStackFrames(frames) {
+  return frames.map(function (frame) {
+    return {
+      ap: frame.abs_path,
+      f: frame.filename,
+      fn: frame.function,
+      li: frame.lineno,
+      co: frame.colno
+    };
+  });
+}
+
+function compressResponse(response) {
+  return {
+    ts: response.transfer_size,
+    ebs: response.encoded_body_size,
+    dbs: response.decoded_body_size
+  };
+}
+
+function compressHTTP(http) {
+  var compressed = {};
+
+  for (var _i = 0, _Object$keys = Object.keys(http); _i < _Object$keys.length; _i++) {
+    var key = _Object$keys[_i];
+    var value = http[key];
+
+    switch (key) {
+      case 'method':
+        compressed.mt = value;
+        break;
+
+      case 'status_code':
+        compressed.sc = value;
+        break;
+
+      case 'url':
+        compressed.url = value;
+        break;
+
+      case 'response':
+        compressed.r = compressResponse(value);
+        break;
+    }
+  }
+
+  return compressed;
+}
+
+function compressContext(context) {
+  if (!context) {
+    return null;
+  }
+
+  var compressed = {};
+
+  for (var _i2 = 0, _Object$keys2 = Object.keys(context); _i2 < _Object$keys2.length; _i2++) {
+    var key = _Object$keys2[_i2];
+    var value = context[key];
+
+    switch (key) {
+      case 'page':
+        compressed.p = {
+          rf: value.referer,
+          url: value.url
+        };
+        break;
+
+      case 'http':
+        compressed.h = compressHTTP(value);
+        break;
+
+      case 'response':
+        compressed.r = compressResponse(value);
+        break;
+
+      case 'user':
+        compressed.u = {
+          id: value.id,
+          un: value.username,
+          em: value.email
+        };
+        break;
+
+      case 'destination':
+        var service = value.service;
+        compressed.dt = {
+          se: {
+            n: service.name,
+            t: service.type,
+            rc: service.resource
+          },
+          ad: value.address,
+          po: value.port
+        };
+        break;
+
+      case 'custom':
+        compressed.cu = value;
+        break;
+    }
+  }
+
+  return compressed;
+}
+
+function compressMarks(marks) {
+  if (!marks) {
+    return null;
+  }
+
+  var navigationTiming = marks.navigationTiming,
+      agent = marks.agent;
+  var compressed = {
+    nt: {},
+    a: {}
+  };
+  COMPRESSED_NAV_TIMING_MARKS.forEach(function (mark, index) {
+    var mapping = NAVIGATION_TIMING_MARKS[index];
+    compressed.nt[mark] = navigationTiming[mapping];
+  });
+  compressed.a = {
+    fb: compressed.nt.rs,
+    di: compressed.nt.di,
+    dc: compressed.nt.dc
+  };
+  var fp = agent.firstContentfulPaint;
+  var lp = agent.largestContentfulPaint;
+
+  if (fp) {
+    compressed.a.fp = fp;
+  }
+
+  if (lp) {
+    compressed.a.lp = lp;
+  }
+
+  return compressed;
+}
+
+function compressMetadata(metadata) {
+  var service = metadata.service,
+      labels = metadata.labels;
+  var agent = service.agent,
+      language = service.language;
+  return {
+    se: {
+      n: service.name,
+      ve: service.version,
+      a: {
+        n: agent.name,
+        ve: agent.version
+      },
+      la: {
+        n: language.name
+      },
+      en: service.environment
+    },
+    l: labels
+  };
+}
+function compressTransaction(transaction) {
+  var spans = transaction.spans.map(function (span) {
+    var spanData = {
+      id: span.id,
+      n: span.name,
+      t: span.type,
+      s: span.start,
+      d: span.duration,
+      c: compressContext(span.context)
+    };
+
+    if (span.parent_id !== transaction.id) {
+      spanData.pid = span.parent_id;
+    }
+
+    if (span.sync === true) {
+      spanData.sy = true;
+    }
+
+    if (span.subtype) {
+      spanData.su = span.subtype;
+    }
+
+    if (span.action) {
+      spanData.ac = span.action;
+    }
+
+    return spanData;
+  });
+  return {
+    id: transaction.id,
+    tid: transaction.trace_id,
+    n: transaction.name,
+    t: transaction.type,
+    d: transaction.duration,
+    c: compressContext(transaction.context),
+    m: compressMarks(transaction.marks),
+    b: compressMetricsets(transaction.breakdown),
+    y: spans,
+    yc: {
+      sd: spans.length
+    },
+    sm: transaction.sampled
+  };
+}
+function compressError(error) {
+  var exception = error.exception;
+  var compressed = {
+    id: error.id,
+    cl: error.culprit,
+    ex: {
+      mg: exception.message,
+      st: compressStackFrames(exception.stacktrace),
+      t: error.type
+    },
+    c: compressContext(error.context)
+  };
+  var transaction = error.transaction;
+
+  if (transaction) {
+    compressed.tid = error.trace_id;
+    compressed.pid = error.parent_id;
+    compressed.xid = error.transaction_id;
+    compressed.x = {
+      t: transaction.type,
+      sm: transaction.sampled
+    };
+  }
+
+  return compressed;
+}
+function compressMetricsets(breakdowns) {
+  return breakdowns.map(function (_ref) {
+    var span = _ref.span,
+        samples = _ref.samples;
+    var isSpan = span != null;
+
+    if (isSpan) {
+      return {
+        y: {
+          t: span.type
+        },
+        sa: {
+          ysc: {
+            v: samples['span.self_time.count'].value
+          },
+          yss: {
+            v: samples['span.self_time.sum.us'].value
+          }
+        }
+      };
+    }
+
+    return {
+      sa: {
+        xdc: {
+          v: samples['transaction.duration.count'].value
+        },
+        xds: {
+          v: samples['transaction.duration.sum.us'].value
+        },
+        xbc: {
+          v: samples['transaction.breakdown.count'].value
+        }
+      }
+    };
+  });
+}
+
+var THROTTLE_INTERVAL = 60000;
+
 var ApmServer = function () {
   function ApmServer(configService, loggingService) {
     this._configService = configService;
     this._loggingService = loggingService;
-    this.errorQueue = undefined;
-    this.transactionQueue = undefined;
-    this.throttleAddError = undefined;
-    this.throttleAddTransaction = undefined;
+    this.queue = undefined;
+    this.throttleEvents = noop$1;
     this.initialized = false;
   }
 
@@ -4315,27 +4012,39 @@ var ApmServer = function () {
     }
 
     this.initialized = true;
-    this.initErrorQueue();
-    this.initTransactionQueue();
+
+    this._initQueue();
   };
 
-  _proto.createMetaData = function createMetaData() {
-    var cfg = this._configService;
-    var metadata = {
-      service: {
-        name: cfg.get('serviceName'),
-        version: cfg.get('serviceVersion'),
-        agent: {
-          name: 'js-base',
-          version: cfg.version
-        },
-        language: {
-          name: 'javascript'
-        },
-        environment: cfg.get('environment')
+  _proto._initQueue = function _initQueue() {
+    var _this = this;
+
+    var queueLimit = this._configService.get('queueLimit');
+
+    var flushInterval = this._configService.get('flushInterval');
+
+    var limit = this._configService.get('eventsLimit');
+
+    var onFlush = function onFlush(events) {
+      var promise = _this.sendEvents(events);
+
+      if (promise) {
+        promise.catch(function (reason) {
+          _this._loggingService.warn('Failed sending events!', _this._constructError(reason));
+        });
       }
     };
-    return truncateModel(METADATA_MODEL, metadata);
+
+    this.queue = new Queue(onFlush, {
+      queueLimit: queueLimit,
+      flushInterval: flushInterval
+    });
+    this.throttleEvents = throttle(this.queue.add.bind(this.queue), function () {
+      return _this._loggingService.warn('Dropped events due to throttling!');
+    }, {
+      limit: limit,
+      interval: THROTTLE_INTERVAL
+    });
   };
 
   _proto._postJson = function _postJson(endPoint, payload) {
@@ -4388,7 +4097,7 @@ var ApmServer = function () {
         payload = _ref2.payload,
         headers = _ref2.headers;
 
-    return new es6Promise_1(function (resolve, reject) {
+    return new Promise$1(function (resolve, reject) {
       var xhr = new window.XMLHttpRequest();
       xhr[XHR_IGNORE] = true;
       xhr.open(method, url, true);
@@ -4433,26 +4142,15 @@ var ApmServer = function () {
     });
   };
 
-  _proto._createQueue = function _createQueue(onFlush) {
-    var queueLimit = this._configService.get('queueLimit');
-
-    var flushInterval = this._configService.get('flushInterval');
-
-    return new Queue(onFlush, {
-      queueLimit: queueLimit,
-      flushInterval: flushInterval
-    });
-  };
-
   _proto.fetchConfig = function fetchConfig(serviceName, environment) {
-    var _this = this;
+    var _this2 = this;
 
     var serverUrl = this._configService.get('serverUrl');
 
     var configEndpoint = serverUrl + "/config/v1/rum/agents";
 
     if (!serviceName) {
-      return es6Promise_1.reject('serviceName is required for fetching central config.');
+      return Promise$1.reject('serviceName is required for fetching central config.');
     }
 
     configEndpoint += "?service.name=" + serviceName;
@@ -4482,97 +4180,56 @@ var ApmServer = function () {
         if (etag) {
           remoteConfig.etag = etag.replace(/["]/g, '');
 
-          _this._configService.setLocalConfig(remoteConfig);
+          _this2._configService.setLocalConfig(remoteConfig);
         }
 
         return remoteConfig;
       }
     }).catch(function (reason) {
-      var error = _this._constructError(reason);
+      var error = _this2._constructError(reason);
 
-      return es6Promise_1.reject(error);
+      return Promise$1.reject(error);
     });
   };
 
-  _proto.initErrorQueue = function initErrorQueue() {
-    var _this2 = this;
-
-    if (this.errorQueue) {
-      this.errorQueue.flush();
-    }
-
-    this.errorQueue = this._createQueue(function (errors) {
-      var p = _this2.sendErrors(errors);
-
-      if (p) {
-        p.catch(function (reason) {
-          _this2._loggingService.warn('Failed sending errors!', _this2._constructError(reason));
-        });
-      }
-    });
-
-    var limit = this._configService.get('errorThrottleLimit');
-
-    var interval = this._configService.get('errorThrottleInterval');
-
-    this.throttleAddError = throttle(this.errorQueue.add.bind(this.errorQueue), function () {
-      return _this2._loggingService.warn('Dropped error due to throttling!');
-    }, {
-      limit: limit,
-      interval: interval
-    });
-  };
-
-  _proto.initTransactionQueue = function initTransactionQueue() {
-    var _this3 = this;
-
-    if (this.transactionQueue) {
-      this.transactionQueue.flush();
-    }
-
-    this.transactionQueue = this._createQueue(function (transactions) {
-      var p = _this3.sendTransactions(transactions);
-
-      if (p) {
-        p.catch(function (reason) {
-          _this3._loggingService.warn('Failed sending transactions!', _this3._constructError(reason));
-        });
-      }
-    });
-
-    var limit = this._configService.get('transactionThrottleLimit');
-
-    var interval = this._configService.get('transactionThrottleInterval');
-
-    this.throttleAddTransaction = throttle(this.transactionQueue.add.bind(this.transactionQueue), function () {
-      return _this3._loggingService.warn('Dropped transaction due to throttling!');
-    }, {
-      limit: limit,
-      interval: interval
-    });
+  _proto.createMetaData = function createMetaData() {
+    var cfg = this._configService;
+    var metadata = {
+      service: {
+        name: cfg.get('serviceName'),
+        version: cfg.get('serviceVersion'),
+        agent: {
+          name: 'rum-js',
+          version: cfg.version
+        },
+        language: {
+          name: 'javascript'
+        },
+        environment: cfg.get('environment')
+      },
+      labels: cfg.get('context.tags')
+    };
+    return truncateModel(METADATA_MODEL, metadata);
   };
 
   _proto.addError = function addError(error) {
-    if (!this.errorQueue) {
-      this.initErrorQueue();
-    }
+    var _this$throttleEvents;
 
-    this.throttleAddError(error);
+    this.throttleEvents((_this$throttleEvents = {}, _this$throttleEvents[ERRORS] = error, _this$throttleEvents));
   };
 
   _proto.addTransaction = function addTransaction(transaction) {
-    if (!this.transactionQueue) {
-      this.initTransactionQueue();
-    }
+    var _this$throttleEvents2;
 
-    this.throttleAddTransaction(transaction);
+    this.throttleEvents((_this$throttleEvents2 = {}, _this$throttleEvents2[TRANSACTIONS] = transaction, _this$throttleEvents2));
   };
 
-  _proto.ndjsonErrors = function ndjsonErrors(errors) {
+  _proto.ndjsonErrors = function ndjsonErrors(errors, compress) {
+    var key = compress ? 'e' : 'error';
     return errors.map(function (error) {
-      return NDJSON.stringify({
-        error: error
-      });
+      var _NDJSON$stringify;
+
+      return NDJSON.stringify((_NDJSON$stringify = {}, _NDJSON$stringify[key] = compress ? compressError(error) : error, _NDJSON$stringify));
     });
   };
 
@@ -4584,56 +4241,65 @@ var ApmServer = function () {
     }).join('');
   };
 
-  _proto.ndjsonTransactions = function ndjsonTransactions(transactions) {
-    var _this4 = this;
+  _proto.ndjsonTransactions = function ndjsonTransactions(transactions, compress) {
+    var _this3 = this;
 
+    var key = compress ? 'x' : 'transaction';
     return transactions.map(function (tr) {
-      var spans = '';
+      var _NDJSON$stringify2;
 
-      if (tr.spans) {
-        spans = tr.spans.map(function (span) {
-          return NDJSON.stringify({
-            span: span
-          });
-        }).join('');
-        delete tr.spans;
+      var spans = '',
+          breakdowns = '';
+
+      if (!compress) {
+        if (tr.spans) {
+          spans = tr.spans.map(function (span) {
+            return NDJSON.stringify({
+              span: span
+            });
+          }).join('');
+          delete tr.spans;
+        }
+
+        if (tr.breakdown) {
+          breakdowns = _this3.ndjsonMetricsets(tr.breakdown);
+          delete tr.breakdown;
+        }
       }
 
-      var breakdowns = '';
-
-      if (tr.breakdown) {
-        breakdowns = _this4.ndjsonMetricsets(tr.breakdown);
-        delete tr.breakdown;
-      }
-
-      return NDJSON.stringify({
-        transaction: tr
-      }) + spans + breakdowns;
+      return NDJSON.stringify((_NDJSON$stringify2 = {}, _NDJSON$stringify2[key] = compress ? compressTransaction(tr) : tr, _NDJSON$stringify2)) + spans + breakdowns;
     });
   };
 
-  _proto._send = function _send(data, type) {
-    if (data === void 0) {
-      data = [];
-    }
+  _proto.sendEvents = function sendEvents(events) {
+    var _payload, _NDJSON$stringify3;
 
-    if (type === void 0) {
-      type = 'transaction';
-    }
-
-    if (data.length === 0) {
+    if (events.length === 0) {
       return;
     }
 
-    var _this$createMetaData = this.createMetaData(),
-        service = _this$createMetaData.service;
+    var transactions = [];
+    var errors = [];
 
-    var payload = {
-      service: service,
-      data: data
-    };
+    for (var i = 0; i < events.length; i++) {
+      var event = events[i];
 
-    var filteredPayload = this._configService.applyFilters(payload);
+      if (event[TRANSACTIONS]) {
+        transactions.push(event[TRANSACTIONS]);
+      }
+
+      if (event[ERRORS]) {
+        errors.push(event[ERRORS]);
+      }
+    }
+
+    if (transactions.length === 0 && errors.length === 0) {
+      return;
+    }
+
+    var cfg = this._configService;
+    var payload = (_payload = {}, _payload[TRANSACTIONS] = transactions, _payload[ERRORS] = errors, _payload);
+    var filteredPayload = cfg.applyFilters(payload);
 
     if (!filteredPayload) {
       this._loggingService.warn('Dropped payload due to filtering!');
@@ -4641,36 +4307,16 @@ var ApmServer = function () {
       return;
     }
 
-    var ndjson;
-
-    if (type === 'errors') {
-      ndjson = this.ndjsonErrors(filteredPayload.data);
-    } else if (type === 'transaction') {
-      ndjson = this.ndjsonTransactions(filteredPayload.data);
-    } else {
-      {
-        this._loggingService.debug('Dropped payload due to unknown data type');
-      }
-
-      return;
-    }
-
-    ndjson.unshift(NDJSON.stringify({
-      metadata: {
-        service: filteredPayload.service
-      }
-    }));
+    var apiVersion = cfg.get('apiVersion');
+    var compress = apiVersion > 2 ? true : false;
+    var ndjson = [];
+    var metadata = this.createMetaData();
+    var metadataKey = compress ? 'm' : 'metadata';
+    ndjson.push(NDJSON.stringify((_NDJSON$stringify3 = {}, _NDJSON$stringify3[metadataKey] = compress ? compressMetadata(metadata) : metadata, _NDJSON$stringify3)));
+    ndjson = ndjson.concat(this.ndjsonErrors(filteredPayload[ERRORS], compress), this.ndjsonTransactions(filteredPayload[TRANSACTIONS], compress));
     var ndjsonPayload = ndjson.join('');
-    var endPoint = this._configService.get('serverUrl') + SERVER_URL_PREFIX;
+    var endPoint = cfg.get('serverUrl') + ("/intake/v" + apiVersion + "/rum/events");
     return this._postJson(endPoint, ndjsonPayload);
-  };
-
-  _proto.sendTransactions = function sendTransactions(transactions) {
-    return this._send(transactions);
-  };
-
-  _proto.sendErrors = function sendErrors(errors) {
-    return this._send(errors, 'errors');
   };
 
   return ApmServer;
@@ -4717,29 +4363,23 @@ var Config = function () {
       active: true,
       instrument: true,
       disableInstrumentations: [],
-      debug: false,
       logLevel: 'warn',
       breakdownMetrics: false,
-      checkBrowserResponsiveness: true,
-      groupSimilarSpans: true,
-      similarSpanThreshold: 0.05,
       ignoreTransactions: [],
-      errorThrottleLimit: 20,
-      errorThrottleInterval: 30000,
-      transactionThrottleLimit: 20,
-      transactionThrottleInterval: 30000,
-      transactionDurationThreshold: 60000,
+      eventsLimit: 80,
       queueLimit: -1,
       flushInterval: 500,
       distributedTracing: true,
       distributedTracingOrigins: [],
-      distributedTracingHeaderName: 'elastic-apm-traceparent',
+      distributedTracingHeaderName: 'traceparent',
       pageLoadTraceId: '',
       pageLoadSpanId: '',
       pageLoadSampled: false,
       pageLoadTransactionName: '',
       transactionSampleRate: 1.0,
       centralConfig: false,
+      monitorLongtasks: true,
+      apiVersion: 3,
       context: {}
     };
     this.events = new EventHandler();
@@ -4928,7 +4568,7 @@ var LoggingService = function () {
   _proto.resetLogMethods = function resetLogMethods() {
     var loggingService = this;
     this.levels.forEach(function (level) {
-      loggingService[level] = loggingService.shouldLog(level) ? log : noop;
+      loggingService[level] = loggingService.shouldLog(level) ? log : noop$1;
 
       function log() {
         var prefix = loggingService.prefix;
@@ -5002,14 +4642,8 @@ var ServiceFactory = function () {
     var loggingService = this.getService('LoggingService');
 
     function setLogLevel(loggingService, configService) {
-      var debug = configService.get('debug');
       var logLevel = configService.get('logLevel');
-
-      if (debug === true && logLevel !== 'trace') {
-        loggingService.setLevel('debug');
-      } else {
-        loggingService.setLevel(logLevel);
-      }
+      loggingService.setLevel(logLevel);
     }
 
     setLogLevel(loggingService, configService);
@@ -5046,7 +4680,7 @@ var ServiceFactory = function () {
 function getInstrumentationFlags(instrument, disabledInstrumentations) {
   var _flags;
 
-  var flags = (_flags = {}, _flags[XMLHTTPREQUEST] = false, _flags[FETCH] = false, _flags[HISTORY] = false, _flags[PAGE_LOAD] = false, _flags[ERROR] = false, _flags);
+  var flags = (_flags = {}, _flags[XMLHTTPREQUEST] = false, _flags[FETCH] = false, _flags[HISTORY] = false, _flags[PAGE_LOAD] = false, _flags[ERROR] = false, _flags[EVENT_TARGET] = false, _flags);
 
   if (!instrument) {
     return flags;
@@ -5102,7 +4736,7 @@ var ApmBase = function () {
     if (this.isEnabled() && !this._initialized) {
       this._initialized = true;
       var configService = this.serviceFactory.getService('ConfigService');
-      configService.setVersion('4.7.0');
+      configService.setVersion('5.1.1');
       this.config(config);
       var loggingService = this.serviceFactory.getService('LoggingService');
 
@@ -5245,12 +4879,6 @@ var ApmBase = function () {
   _proto.setCustomContext = function setCustomContext(customContext) {
     var configService = this.serviceFactory.getService('ConfigService');
     configService.setCustomContext(customContext);
-  };
-
-  _proto.addTags = function addTags(tags) {
-    var loggingService = this.serviceFactory.getService('LoggingService');
-    loggingService.warn('addTags deprecated, please use addLabels');
-    this.addLabels(tags);
   };
 
   _proto.addLabels = function addLabels(labels) {
