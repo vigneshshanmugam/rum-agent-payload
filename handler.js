@@ -1,11 +1,12 @@
 const handler = require("serve-handler");
 
 let resourceCount = 0;
+const serverUrl = /intake\/v\d+\/rum\/events/;
 
 module.exports = function(req, res) {
   const pathname = req.url;
 
-  if (pathname.indexOf("/intake/v2/rum/events") >= 0) {
+  if (serverUrl.test(pathname)) {
     let chunks = [];
     req.on("data", data => {
       chunks.push(data);

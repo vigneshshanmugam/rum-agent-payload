@@ -717,7 +717,7 @@ Promise._unhandledRejectionFn = function _unhandledRejectionFn(err) {
 
 var local = {};
 
-if (typeof window !== 'undefined') {
+if (isBrowser) {
   local = window;
 } else if (typeof self !== 'undefined') {
   local = self;
@@ -726,7 +726,8 @@ if (typeof window !== 'undefined') {
 var Promise$1 = 'Promise' in local ? local.Promise : Promise;
 
 var slice = [].slice;
-var PERF = typeof window !== 'undefined' && typeof performance !== 'undefined' ? performance : {};
+var isBrowser = typeof window !== 'undefined';
+var PERF = isBrowser && typeof performance !== 'undefined' ? performance : {};
 
 function isCORSSupported() {
   var xhr = new window.XMLHttpRequest();
@@ -813,7 +814,7 @@ function checkSameOrigin(source, target) {
 }
 
 function isPlatformSupported() {
-  return typeof window !== 'undefined' && typeof Array.prototype.forEach === 'function' && typeof JSON.stringify === 'function' && typeof Function.bind === 'function' && PERF && typeof PERF.now === 'function' && isCORSSupported();
+  return isBrowser && typeof Array.prototype.forEach === 'function' && typeof JSON.stringify === 'function' && typeof Function.bind === 'function' && PERF && typeof PERF.now === 'function' && isCORSSupported();
 }
 
 function setLabel(key, value, obj) {
@@ -1007,7 +1008,6 @@ function isDefaultPort(port, protocol) {
 
 var RULES = [['#', 'hash'], ['?', 'query'], ['/', 'path'], ['@', 'auth', 1], [NaN, 'host', undefined, 1]];
 var PROTOCOL_REGEX = /^([a-z][a-z0-9.+-]*:)?(\/\/)?([\S\s]*)/i;
-
 var Url = function () {
   function Url(url) {
     var _this$extractProtocol = this.extractProtocol(url || ''),
@@ -1107,7 +1107,7 @@ var Url = function () {
   _proto.getLocation = function getLocation() {
     var globalVar = {};
 
-    if (typeof window !== 'undefined') {
+    if (isBrowser) {
       globalVar = window;
     }
 
@@ -1125,6 +1125,68 @@ var Url = function () {
 
   return Url;
 }();
+function slugifyUrl(urlStr, depth) {
+  if (depth === void 0) {
+    depth = 2;
+  }
+
+  var parsedUrl = new Url(urlStr);
+  var query = parsedUrl.query,
+      path = parsedUrl.path;
+  var pathParts = path.substring(1).split('/');
+  var redactString = ':id';
+  var wildcard = '*';
+  var specialCharsRegex = /\W|_/g;
+  var digitsRegex = /[0-9]/g;
+  var lowerCaseRegex = /[a-z]/g;
+  var upperCaseRegex = /[A-Z]/g;
+  var redactedParts = [];
+  var redactedBefore = false;
+
+  for (var _index = 0; _index < pathParts.length; _index++) {
+    var part = pathParts[_index];
+
+    if (redactedBefore || _index > depth - 1) {
+      if (part) {
+        redactedParts.push(wildcard);
+      }
+
+      break;
+    }
+
+    var numberOfSpecialChars = (part.match(specialCharsRegex) || []).length;
+
+    if (numberOfSpecialChars >= 2) {
+      redactedParts.push(redactString);
+      redactedBefore = true;
+      continue;
+    }
+
+    var numberOfDigits = (part.match(digitsRegex) || []).length;
+
+    if (numberOfDigits > 3 || part.length > 3 && numberOfDigits / part.length >= 0.3) {
+      redactedParts.push(redactString);
+      redactedBefore = true;
+      continue;
+    }
+
+    var numberofUpperCase = (part.match(upperCaseRegex) || []).length;
+    var numberofLowerCase = (part.match(lowerCaseRegex) || []).length;
+    var lowerCaseRate = numberofLowerCase / part.length;
+    var upperCaseRate = numberofUpperCase / part.length;
+
+    if (part.length > 5 && (upperCaseRate > 0.3 && upperCaseRate < 0.6 || lowerCaseRate > 0.3 && lowerCaseRate < 0.6)) {
+      redactedParts.push(redactString);
+      redactedBefore = true;
+      continue;
+    }
+
+    part && redactedParts.push(part);
+  }
+
+  var redacted = '/' + (redactedParts.length >= 2 ? redactedParts.join('/') : redactedParts.join('')) + (query ? '?{query}' : '');
+  return redacted;
+}
 
 var SCHEDULE = 'schedule';
 var INVOKE = 'invoke';
@@ -1161,9 +1223,13 @@ var NAVIGATION = 'navigation';
 var RESOURCE = 'resource';
 var FIRST_CONTENTFUL_PAINT = 'first-contentful-paint';
 var LARGEST_CONTENTFUL_PAINT = 'largest-contentful-paint';
-var BROWSER_RESPONSIVENESS_INTERVAL = 500;
+var FIRST_INPUT = 'first-input';
 var ERRORS = 'errors';
 var TRANSACTIONS = 'transactions';
+var CONFIG_SERVICE = 'ConfigService';
+var LOGGING_SERVICE = 'LoggingService';
+var APM_SERVER = 'ApmServer';
+var TRUNCATED_TYPE = '.truncated';
 var KEYWORD_LIMIT = 1024;
 
 function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
@@ -1171,6 +1237,7 @@ var LEFT_SQUARE_BRACKET = 91;
 var RIGHT_SQUARE_BRACKET = 93;
 var EXTERNAL = 'external';
 var RESOURCE$1 = 'resource';
+var HARD_NAVIGATION = 'hard-navigation';
 
 function getPortNumber(port, protocol) {
   if (port === '') {
@@ -1265,11 +1332,20 @@ function getExternalContext(data) {
   return context;
 }
 
+function getNavigationContext(data) {
+  var url = data.url;
+  var parsedUrl = new Url(url);
+  var destination = getDestination(parsedUrl, HARD_NAVIGATION);
+  return {
+    destination: destination
+  };
+}
+
 function getPageContext() {
   return {
     page: {
       referer: document.referrer,
-      url: window.location.href
+      url: location.href
     }
   };
 }
@@ -1288,6 +1364,10 @@ function addSpanContext(span, data) {
 
     case RESOURCE$1:
       context = getResourceContext(data);
+      break;
+
+    case HARD_NAVIGATION:
+      context = getNavigationContext(data);
       break;
   }
 
@@ -1630,17 +1710,92 @@ var ErrorLogging = function () {
   return ErrorLogging;
 }();
 
-var ErrorLogging$1 = {
-  ErrorLogging: ErrorLogging,
-  registerServices: function registerServices(serviceFactory) {
-    serviceFactory.registerServiceCreator('ErrorLogging', function () {
-      var apmService = serviceFactory.getService('ApmServer');
-      var configService = serviceFactory.getService('ConfigService');
-      var transactionService = serviceFactory.getService('TransactionService');
-      return new ErrorLogging(apmService, configService, transactionService);
-    });
+var Queue = function () {
+  function Queue(onFlush, opts) {
+    if (opts === void 0) {
+      opts = {};
+    }
+
+    this.onFlush = onFlush;
+    this.items = [];
+    this.queueLimit = opts.queueLimit || -1;
+    this.flushInterval = opts.flushInterval || 0;
+    this.timeoutId = undefined;
   }
-};
+
+  var _proto = Queue.prototype;
+
+  _proto._setTimer = function _setTimer() {
+    var _this = this;
+
+    this.timeoutId = setTimeout(function () {
+      return _this.flush();
+    }, this.flushInterval);
+  };
+
+  _proto._clear = function _clear() {
+    if (typeof this.timeoutId !== 'undefined') {
+      clearTimeout(this.timeoutId);
+      this.timeoutId = undefined;
+    }
+
+    this.items = [];
+  };
+
+  _proto.flush = function flush() {
+    this.onFlush(this.items);
+
+    this._clear();
+  };
+
+  _proto.add = function add(item) {
+    this.items.push(item);
+
+    if (this.queueLimit !== -1 && this.items.length >= this.queueLimit) {
+      this.flush();
+    } else {
+      if (typeof this.timeoutId === 'undefined') {
+        this._setTimer();
+      }
+    }
+  };
+
+  return Queue;
+}();
+
+function throttle(fn, onThrottle, opts) {
+  var context = this;
+  var limit = opts.limit;
+  var interval = opts.interval;
+  var counter = 0;
+  var timeoutId;
+  return function () {
+    counter++;
+
+    if (typeof timeoutId === 'undefined') {
+      timeoutId = setTimeout(function () {
+        counter = 0;
+        timeoutId = undefined;
+      }, interval);
+    }
+
+    if (counter > limit && typeof onThrottle === 'function') {
+      return onThrottle.apply(context, arguments);
+    } else {
+      return fn.apply(context, arguments);
+    }
+  };
+}
+
+var NDJSON = function () {
+  function NDJSON() {}
+
+  NDJSON.stringify = function stringify(object) {
+    return JSON.stringify(object) + '\n';
+  };
+
+  return NDJSON;
+}();
 
 var globalState = {
   fetchInProgress: false
@@ -1700,6 +1855,1323 @@ var XHR_IGNORE = apmSymbol('xhrIgnore');
 var XHR_SYNC = apmSymbol('xhrSync');
 var XHR_URL = apmSymbol('xhrURL');
 var XHR_METHOD = apmSymbol('xhrMethod');
+
+var SpanBase = function () {
+  function SpanBase(name, type, options) {
+    if (options === void 0) {
+      options = {};
+    }
+
+    if (!name) {
+      name = NAME_UNKNOWN;
+    }
+
+    if (!type) {
+      type = TYPE_CUSTOM;
+    }
+
+    this.name = name;
+    this.type = type;
+    this.options = options;
+    this.id = options.id || generateRandomId(16);
+    this.traceId = options.traceId;
+    this.sampled = options.sampled;
+    this.timestamp = options.timestamp;
+    this._start = getTime(options.startTime);
+    this._end = undefined;
+    this.ended = false;
+    this.onEnd = options.onEnd;
+  }
+
+  var _proto = SpanBase.prototype;
+
+  _proto.ensureContext = function ensureContext() {
+    if (!this.context) {
+      this.context = {};
+    }
+  };
+
+  _proto.addLabels = function addLabels(tags) {
+    this.ensureContext();
+    var ctx = this.context;
+
+    if (!ctx.tags) {
+      ctx.tags = {};
+    }
+
+    var keys = Object.keys(tags);
+    keys.forEach(function (k) {
+      return setLabel(k, tags[k], ctx.tags);
+    });
+  };
+
+  _proto.addContext = function addContext() {
+    for (var _len = arguments.length, context = new Array(_len), _key = 0; _key < _len; _key++) {
+      context[_key] = arguments[_key];
+    }
+
+    if (context.length === 0) return;
+    this.ensureContext();
+    merge.apply(void 0, [this.context].concat(context));
+  };
+
+  _proto.end = function end(endTime) {
+    if (this.ended) {
+      return;
+    }
+
+    this.ended = true;
+    this._end = getTime(endTime);
+    this.callOnEnd();
+  };
+
+  _proto.callOnEnd = function callOnEnd() {
+    if (typeof this.onEnd === 'function') {
+      this.onEnd(this);
+    }
+  };
+
+  _proto.duration = function duration() {
+    return getDuration(this._start, this._end);
+  };
+
+  return SpanBase;
+}();
+
+function _inheritsLoose(subClass, superClass) { subClass.prototype = Object.create(superClass.prototype); subClass.prototype.constructor = subClass; subClass.__proto__ = superClass; }
+
+var Span = function (_SpanBase) {
+  _inheritsLoose(Span, _SpanBase);
+
+  function Span(name, type, options) {
+    var _this;
+
+    _this = _SpanBase.call(this, name, type, options) || this;
+    _this.parentId = _this.options.parentId;
+    _this.subtype = undefined;
+    _this.action = undefined;
+
+    if (_this.type.indexOf('.') !== -1) {
+      var fields = _this.type.split('.', 3);
+
+      _this.type = fields[0];
+      _this.subtype = fields[1];
+      _this.action = fields[2];
+    }
+
+    _this.sync = _this.options.sync;
+    return _this;
+  }
+
+  var _proto = Span.prototype;
+
+  _proto.end = function end(endTime, data) {
+    _SpanBase.prototype.end.call(this, endTime);
+
+    addSpanContext(this, data);
+  };
+
+  return Span;
+}(SpanBase);
+
+var state = {
+  bootstrapTime: null,
+  lastHiddenStart: Number.MIN_SAFE_INTEGER
+};
+
+var eventPairs = [['domainLookupStart', 'domainLookupEnd', 'Domain lookup'], ['connectStart', 'connectEnd', 'Making a connection to the server'], ['requestStart', 'responseEnd', 'Requesting and receiving the document'], ['domLoading', 'domInteractive', 'Parsing the document, executing sync. scripts'], ['domContentLoadedEventStart', 'domContentLoadedEventEnd', 'Fire "DOMContentLoaded" event'], ['loadEventStart', 'loadEventEnd', 'Fire "load" event']];
+
+function shouldCreateSpan(start, end, trStart, trEnd, baseTime) {
+  if (baseTime === void 0) {
+    baseTime = 0;
+  }
+
+  return typeof start === 'number' && typeof end === 'number' && start >= baseTime && end > start && start - baseTime >= trStart && end - baseTime <= trEnd && end - start < MAX_SPAN_DURATION && start - baseTime < MAX_SPAN_DURATION && end - baseTime < MAX_SPAN_DURATION;
+}
+
+function createNavigationTimingSpans(timings, baseTime, trStart, trEnd) {
+  var spans = [];
+
+  for (var i = 0; i < eventPairs.length; i++) {
+    var start = timings[eventPairs[i][0]];
+    var end = timings[eventPairs[i][1]];
+
+    if (!shouldCreateSpan(start, end, trStart, trEnd, baseTime)) {
+      continue;
+    }
+
+    var span = new Span(eventPairs[i][2], 'hard-navigation.browser-timing');
+    var data = null;
+
+    if (eventPairs[i][0] === 'requestStart') {
+      span.pageResponse = true;
+      data = {
+        url: location.origin
+      };
+    }
+
+    span._start = start - baseTime;
+    span.end(end - baseTime, data);
+    spans.push(span);
+  }
+
+  return spans;
+}
+
+function createResourceTimingSpan(resourceTimingEntry) {
+  var name = resourceTimingEntry.name,
+      initiatorType = resourceTimingEntry.initiatorType,
+      startTime = resourceTimingEntry.startTime,
+      responseEnd = resourceTimingEntry.responseEnd;
+  var kind = 'resource';
+
+  if (initiatorType) {
+    kind += '.' + initiatorType;
+  }
+
+  var spanName = stripQueryStringFromUrl(name);
+  var span = new Span(spanName, kind);
+  span._start = startTime;
+  span.end(responseEnd, {
+    url: name,
+    entry: resourceTimingEntry
+  });
+  return span;
+}
+
+function isCapturedByPatching(resourceStartTime, requestPatchTime) {
+  return requestPatchTime != null && resourceStartTime > requestPatchTime;
+}
+
+function isIntakeAPIEndpoint(url) {
+  return /intake\/v\d+\/rum\/events/.test(url);
+}
+
+function createResourceTimingSpans(entries, requestPatchTime, trStart, trEnd) {
+  var spans = [];
+
+  for (var i = 0; i < entries.length; i++) {
+    var _entries$i = entries[i],
+        initiatorType = _entries$i.initiatorType,
+        name = _entries$i.name,
+        startTime = _entries$i.startTime,
+        responseEnd = _entries$i.responseEnd;
+
+    if (RESOURCE_INITIATOR_TYPES.indexOf(initiatorType) === -1 || name == null) {
+      continue;
+    }
+
+    if ((initiatorType === 'xmlhttprequest' || initiatorType === 'fetch') && (isIntakeAPIEndpoint(name) || isCapturedByPatching(startTime, requestPatchTime))) {
+      continue;
+    }
+
+    if (shouldCreateSpan(startTime, responseEnd, trStart, trEnd)) {
+      spans.push(createResourceTimingSpan(entries[i]));
+    }
+  }
+
+  return spans;
+}
+
+function createUserTimingSpans(entries, trStart, trEnd) {
+  var userTimingSpans = [];
+
+  for (var i = 0; i < entries.length; i++) {
+    var _entries$i2 = entries[i],
+        name = _entries$i2.name,
+        startTime = _entries$i2.startTime,
+        duration = _entries$i2.duration;
+    var end = startTime + duration;
+
+    if (duration <= USER_TIMING_THRESHOLD || !shouldCreateSpan(startTime, end, trStart, trEnd)) {
+      continue;
+    }
+
+    var kind = 'app';
+    var span = new Span(name, kind);
+    span._start = startTime;
+    span.end(end);
+    userTimingSpans.push(span);
+  }
+
+  return userTimingSpans;
+}
+
+var NAVIGATION_TIMING_MARKS = ['fetchStart', 'domainLookupStart', 'domainLookupEnd', 'connectStart', 'connectEnd', 'requestStart', 'responseStart', 'responseEnd', 'domLoading', 'domInteractive', 'domContentLoadedEventStart', 'domContentLoadedEventEnd', 'domComplete', 'loadEventStart', 'loadEventEnd'];
+var COMPRESSED_NAV_TIMING_MARKS = ['fs', 'ls', 'le', 'cs', 'ce', 'qs', 'rs', 're', 'dl', 'di', 'ds', 'de', 'dc', 'es', 'ee'];
+
+function getNavigationTimingMarks(timing) {
+  var fetchStart = timing.fetchStart,
+      navigationStart = timing.navigationStart;
+
+  if (navigationStart && fetchStart < navigationStart) {
+    return null;
+  }
+
+  var marks = {};
+  NAVIGATION_TIMING_MARKS.forEach(function (timingKey) {
+    var m = timing[timingKey];
+
+    if (m && m >= fetchStart) {
+      marks[timingKey] = parseInt(m - fetchStart);
+    }
+  });
+  return marks;
+}
+
+function getPageLoadMarks(timing) {
+  var marks = getNavigationTimingMarks(timing);
+
+  if (marks == null) {
+    return null;
+  }
+
+  return {
+    navigationTiming: marks,
+    agent: {
+      timeToFirstByte: marks.responseStart,
+      domInteractive: marks.domInteractive,
+      domComplete: marks.domComplete
+    }
+  };
+}
+
+function captureNavigation(transaction) {
+  if (!transaction.captureTimings) {
+    return;
+  }
+
+  var trEnd = transaction._end;
+
+  if (transaction.type === PAGE_LOAD) {
+    if (transaction.marks && transaction.marks.custom) {
+      var customMarks = transaction.marks.custom;
+      Object.keys(customMarks).forEach(function (key) {
+        customMarks[key] += transaction._start;
+      });
+    }
+
+    var trStart = 0;
+    transaction._start = trStart;
+    var timings = PERF.timing;
+    createNavigationTimingSpans(timings, timings.fetchStart, trStart, trEnd).forEach(function (span) {
+      span.traceId = transaction.traceId;
+      span.sampled = transaction.sampled;
+
+      if (span.pageResponse && transaction.options.pageLoadSpanId) {
+        span.id = transaction.options.pageLoadSpanId;
+      }
+
+      transaction.spans.push(span);
+    });
+    transaction.addMarks(getPageLoadMarks(timings));
+  }
+
+  if (isPerfTimelineSupported()) {
+    var _trStart = transaction._start;
+    var resourceEntries = PERF.getEntriesByType(RESOURCE);
+    createResourceTimingSpans(resourceEntries, state.bootstrapTime, _trStart, trEnd).forEach(function (span) {
+      return transaction.spans.push(span);
+    });
+    var userEntries = PERF.getEntriesByType(MEASURE);
+    createUserTimingSpans(userEntries, _trStart, trEnd).forEach(function (span) {
+      return transaction.spans.push(span);
+    });
+  }
+}
+
+function compressStackFrames(frames) {
+  return frames.map(function (frame) {
+    return {
+      ap: frame.abs_path,
+      f: frame.filename,
+      fn: frame.function,
+      li: frame.lineno,
+      co: frame.colno
+    };
+  });
+}
+
+function compressResponse(response) {
+  return {
+    ts: response.transfer_size,
+    ebs: response.encoded_body_size,
+    dbs: response.decoded_body_size
+  };
+}
+
+function compressHTTP(http) {
+  var compressed = {};
+  var method = http.method,
+      status_code = http.status_code,
+      url = http.url,
+      response = http.response;
+  compressed.url = url;
+
+  if (method) {
+    compressed.mt = method;
+  }
+
+  if (status_code) {
+    compressed.sc = status_code;
+  }
+
+  if (response) {
+    compressed.r = compressResponse(response);
+  }
+
+  return compressed;
+}
+
+function compressContext(context) {
+  if (!context) {
+    return null;
+  }
+
+  var compressed = {};
+  var page = context.page,
+      http = context.http,
+      response = context.response,
+      destination = context.destination,
+      user = context.user,
+      custom = context.custom;
+
+  if (page) {
+    compressed.p = {
+      rf: page.referer,
+      url: page.url
+    };
+  }
+
+  if (http) {
+    compressed.h = compressHTTP(http);
+  }
+
+  if (response) {
+    compressed.r = compressResponse(response);
+  }
+
+  if (destination) {
+    var service = destination.service;
+    compressed.dt = {
+      se: {
+        n: service.name,
+        t: service.type,
+        rc: service.resource
+      },
+      ad: destination.address,
+      po: destination.port
+    };
+  }
+
+  if (user) {
+    compressed.u = {
+      id: user.id,
+      un: user.username,
+      em: user.email
+    };
+  }
+
+  if (custom) {
+    compressed.cu = custom;
+  }
+
+  return compressed;
+}
+
+function compressMarks(marks) {
+  if (!marks) {
+    return null;
+  }
+
+  var navigationTiming = marks.navigationTiming,
+      agent = marks.agent;
+  var compressed = {
+    nt: {}
+  };
+  COMPRESSED_NAV_TIMING_MARKS.forEach(function (mark, index) {
+    var mapping = NAVIGATION_TIMING_MARKS[index];
+    compressed.nt[mark] = navigationTiming[mapping];
+  });
+  compressed.a = {
+    fb: compressed.nt.rs,
+    di: compressed.nt.di,
+    dc: compressed.nt.dc
+  };
+  var fp = agent.firstContentfulPaint;
+  var lp = agent.largestContentfulPaint;
+
+  if (fp) {
+    compressed.a.fp = fp;
+  }
+
+  if (lp) {
+    compressed.a.lp = lp;
+  }
+
+  return compressed;
+}
+
+function compressMetadata(metadata) {
+  var service = metadata.service,
+      labels = metadata.labels;
+  var agent = service.agent,
+      language = service.language;
+  return {
+    se: {
+      n: service.name,
+      ve: service.version,
+      a: {
+        n: agent.name,
+        ve: agent.version
+      },
+      la: {
+        n: language.name
+      },
+      en: service.environment
+    },
+    l: labels
+  };
+}
+function compressTransaction(transaction) {
+  var spans = transaction.spans.map(function (span) {
+    var spanData = {
+      id: span.id,
+      n: span.name,
+      t: span.type,
+      s: span.start,
+      d: span.duration,
+      c: compressContext(span.context)
+    };
+
+    if (span.parent_id !== transaction.id) {
+      spanData.pid = span.parent_id;
+    }
+
+    if (span.sync === true) {
+      spanData.sy = true;
+    }
+
+    if (span.subtype) {
+      spanData.su = span.subtype;
+    }
+
+    if (span.action) {
+      spanData.ac = span.action;
+    }
+
+    return spanData;
+  });
+  return {
+    id: transaction.id,
+    tid: transaction.trace_id,
+    n: transaction.name,
+    t: transaction.type,
+    d: transaction.duration,
+    c: compressContext(transaction.context),
+    m: compressMarks(transaction.marks),
+    me: compressMetricsets(transaction.breakdown),
+    y: spans,
+    yc: {
+      sd: spans.length
+    },
+    sm: transaction.sampled
+  };
+}
+function compressError(error) {
+  var exception = error.exception;
+  var compressed = {
+    id: error.id,
+    cl: error.culprit,
+    ex: {
+      mg: exception.message,
+      st: compressStackFrames(exception.stacktrace),
+      t: error.type
+    },
+    c: compressContext(error.context)
+  };
+  var transaction = error.transaction;
+
+  if (transaction) {
+    compressed.tid = error.trace_id;
+    compressed.pid = error.parent_id;
+    compressed.xid = error.transaction_id;
+    compressed.x = {
+      t: transaction.type,
+      sm: transaction.sampled
+    };
+  }
+
+  return compressed;
+}
+function compressMetricsets(breakdowns) {
+  return breakdowns.map(function (_ref) {
+    var span = _ref.span,
+        samples = _ref.samples;
+    var isSpan = span != null;
+
+    if (isSpan) {
+      return {
+        y: {
+          t: span.type
+        },
+        sa: {
+          ysc: {
+            v: samples['span.self_time.count'].value
+          },
+          yss: {
+            v: samples['span.self_time.sum.us'].value
+          }
+        }
+      };
+    }
+
+    return {
+      sa: {
+        xdc: {
+          v: samples['transaction.duration.count'].value
+        },
+        xds: {
+          v: samples['transaction.duration.sum.us'].value
+        },
+        xbc: {
+          v: samples['transaction.breakdown.count'].value
+        }
+      }
+    };
+  });
+}
+
+var THROTTLE_INTERVAL = 60000;
+
+var ApmServer = function () {
+  function ApmServer(configService, loggingService) {
+    this._configService = configService;
+    this._loggingService = loggingService;
+    this.queue = undefined;
+    this.throttleEvents = noop$1;
+  }
+
+  var _proto = ApmServer.prototype;
+
+  _proto.init = function init() {
+    var _this = this;
+
+    var queueLimit = this._configService.get('queueLimit');
+
+    var flushInterval = this._configService.get('flushInterval');
+
+    var limit = this._configService.get('eventsLimit');
+
+    var onFlush = function onFlush(events) {
+      var promise = _this.sendEvents(events);
+
+      if (promise) {
+        promise.catch(function (reason) {
+          _this._loggingService.warn('Failed sending events!', _this._constructError(reason));
+        });
+      }
+    };
+
+    this.queue = new Queue(onFlush, {
+      queueLimit: queueLimit,
+      flushInterval: flushInterval
+    });
+    this.throttleEvents = throttle(this.queue.add.bind(this.queue), function () {
+      return _this._loggingService.warn('Dropped events due to throttling!');
+    }, {
+      limit: limit,
+      interval: THROTTLE_INTERVAL
+    });
+  };
+
+  _proto._postJson = function _postJson(endPoint, payload) {
+    return this._makeHttpRequest('POST', endPoint, {
+      payload: payload,
+      headers: {
+        'Content-Type': 'application/x-ndjson'
+      }
+    }).then(function (_ref) {
+      var responseText = _ref.responseText;
+      return responseText;
+    });
+  };
+
+  _proto._constructError = function _constructError(reason) {
+    var url = reason.url,
+        status = reason.status,
+        responseText = reason.responseText;
+
+    if (typeof status == 'undefined') {
+      return reason;
+    }
+
+    var message = url + ' HTTP status: ' + status;
+
+    if ( responseText) {
+      try {
+        var serverErrors = [];
+        var response = JSON.parse(responseText);
+
+        if (response.errors && response.errors.length > 0) {
+          response.errors.forEach(function (err) {
+            return serverErrors.push(err.message);
+          });
+          message += ' ' + serverErrors.join(',');
+        }
+      } catch (e) {
+        this._loggingService.debug('Error parsing response from APM server', e);
+      }
+    }
+
+    return new Error(message);
+  };
+
+  _proto._makeHttpRequest = function _makeHttpRequest(method, url, _temp) {
+    var _ref2 = _temp === void 0 ? {
+      timeout: 10000
+    } : _temp,
+        timeout = _ref2.timeout,
+        payload = _ref2.payload,
+        headers = _ref2.headers;
+
+    return new Promise$1(function (resolve, reject) {
+      var xhr = new window.XMLHttpRequest();
+      xhr[XHR_IGNORE] = true;
+      xhr.open(method, url, true);
+      xhr.timeout = timeout;
+
+      if (headers) {
+        for (var header in headers) {
+          if (headers.hasOwnProperty(header)) {
+            xhr.setRequestHeader(header, headers[header]);
+          }
+        }
+      }
+
+      xhr.onreadystatechange = function () {
+        if (xhr.readyState === 4) {
+          var status = xhr.status,
+              responseText = xhr.responseText;
+
+          if (status === 0 || status > 399 && status < 600) {
+            reject({
+              url: url,
+              status: status,
+              responseText: responseText
+            });
+          } else {
+            resolve(xhr);
+          }
+        }
+      };
+
+      xhr.onerror = function () {
+        var status = xhr.status,
+            responseText = xhr.responseText;
+        reject({
+          url: url,
+          status: status,
+          responseText: responseText
+        });
+      };
+
+      xhr.send(payload);
+    });
+  };
+
+  _proto.fetchConfig = function fetchConfig(serviceName, environment) {
+    var _this2 = this;
+
+    var serverUrl = this._configService.get('serverUrl');
+
+    var configEndpoint = serverUrl + "/config/v1/rum/agents";
+
+    if (!serviceName) {
+      return Promise$1.reject('serviceName is required for fetching central config.');
+    }
+
+    configEndpoint += "?service.name=" + serviceName;
+
+    if (environment) {
+      configEndpoint += "&service.environment=" + environment;
+    }
+
+    var localConfig = this._configService.getLocalConfig();
+
+    if (localConfig) {
+      configEndpoint += "&ifnonematch=" + localConfig.etag;
+    }
+
+    return this._makeHttpRequest('GET', configEndpoint, {
+      timeout: 5000
+    }).then(function (xhr) {
+      var status = xhr.status,
+          responseText = xhr.responseText;
+
+      if (status === 304) {
+        return localConfig;
+      } else {
+        var remoteConfig = JSON.parse(responseText);
+        var etag = xhr.getResponseHeader('etag');
+
+        if (etag) {
+          remoteConfig.etag = etag.replace(/["]/g, '');
+
+          _this2._configService.setLocalConfig(remoteConfig);
+        }
+
+        return remoteConfig;
+      }
+    }).catch(function (reason) {
+      var error = _this2._constructError(reason);
+
+      return Promise$1.reject(error);
+    });
+  };
+
+  _proto.createMetaData = function createMetaData() {
+    var cfg = this._configService;
+    var metadata = {
+      service: {
+        name: cfg.get('serviceName'),
+        version: cfg.get('serviceVersion'),
+        agent: {
+          name: 'rum-js',
+          version: cfg.version
+        },
+        language: {
+          name: 'javascript'
+        },
+        environment: cfg.get('environment')
+      },
+      labels: cfg.get('context.tags')
+    };
+    return truncateModel(METADATA_MODEL, metadata);
+  };
+
+  _proto.addError = function addError(error) {
+    var _this$throttleEvents;
+
+    this.throttleEvents((_this$throttleEvents = {}, _this$throttleEvents[ERRORS] = error, _this$throttleEvents));
+  };
+
+  _proto.addTransaction = function addTransaction(transaction) {
+    var _this$throttleEvents2;
+
+    this.throttleEvents((_this$throttleEvents2 = {}, _this$throttleEvents2[TRANSACTIONS] = transaction, _this$throttleEvents2));
+  };
+
+  _proto.ndjsonErrors = function ndjsonErrors(errors, compress) {
+    var key = compress ? 'e' : 'error';
+    return errors.map(function (error) {
+      var _NDJSON$stringify;
+
+      return NDJSON.stringify((_NDJSON$stringify = {}, _NDJSON$stringify[key] = compress ? compressError(error) : error, _NDJSON$stringify));
+    });
+  };
+
+  _proto.ndjsonMetricsets = function ndjsonMetricsets(metricsets) {
+    return metricsets.map(function (metricset) {
+      return NDJSON.stringify({
+        metricset: metricset
+      });
+    }).join('');
+  };
+
+  _proto.ndjsonTransactions = function ndjsonTransactions(transactions, compress) {
+    var _this3 = this;
+
+    var key = compress ? 'x' : 'transaction';
+    return transactions.map(function (tr) {
+      var _NDJSON$stringify2;
+
+      var spans = '',
+          breakdowns = '';
+
+      if (!compress) {
+        if (tr.spans) {
+          spans = tr.spans.map(function (span) {
+            return NDJSON.stringify({
+              span: span
+            });
+          }).join('');
+          delete tr.spans;
+        }
+
+        if (tr.breakdown) {
+          breakdowns = _this3.ndjsonMetricsets(tr.breakdown);
+          delete tr.breakdown;
+        }
+      }
+
+      return NDJSON.stringify((_NDJSON$stringify2 = {}, _NDJSON$stringify2[key] = compress ? compressTransaction(tr) : tr, _NDJSON$stringify2)) + spans + breakdowns;
+    });
+  };
+
+  _proto.sendEvents = function sendEvents(events) {
+    var _payload, _NDJSON$stringify3;
+
+    if (events.length === 0) {
+      return;
+    }
+
+    var transactions = [];
+    var errors = [];
+
+    for (var i = 0; i < events.length; i++) {
+      var event = events[i];
+
+      if (event[TRANSACTIONS]) {
+        transactions.push(event[TRANSACTIONS]);
+      }
+
+      if (event[ERRORS]) {
+        errors.push(event[ERRORS]);
+      }
+    }
+
+    if (transactions.length === 0 && errors.length === 0) {
+      return;
+    }
+
+    var cfg = this._configService;
+    var payload = (_payload = {}, _payload[TRANSACTIONS] = transactions, _payload[ERRORS] = errors, _payload);
+    var filteredPayload = cfg.applyFilters(payload);
+
+    if (!filteredPayload) {
+      this._loggingService.warn('Dropped payload due to filtering!');
+
+      return;
+    }
+
+    var apiVersion = cfg.get('apiVersion');
+    var compress = apiVersion > 2;
+    var ndjson = [];
+    var metadata = this.createMetaData();
+    var metadataKey = compress ? 'm' : 'metadata';
+    ndjson.push(NDJSON.stringify((_NDJSON$stringify3 = {}, _NDJSON$stringify3[metadataKey] = compress ? compressMetadata(metadata) : metadata, _NDJSON$stringify3)));
+    ndjson = ndjson.concat(this.ndjsonErrors(filteredPayload[ERRORS], compress), this.ndjsonTransactions(filteredPayload[TRANSACTIONS], compress));
+    var ndjsonPayload = ndjson.join('');
+    var endPoint = cfg.get('serverUrl') + ("/intake/v" + apiVersion + "/rum/events");
+    return this._postJson(endPoint, ndjsonPayload);
+  };
+
+  return ApmServer;
+}();
+
+var EventHandler = function () {
+  function EventHandler() {
+    this.observers = {};
+  }
+
+  var _proto = EventHandler.prototype;
+
+  _proto.observe = function observe(name, fn) {
+    var _this = this;
+
+    if (typeof fn === 'function') {
+      if (!this.observers[name]) {
+        this.observers[name] = [];
+      }
+
+      this.observers[name].push(fn);
+      return function () {
+        var index = _this.observers[name].indexOf(fn);
+
+        if (index > -1) {
+          _this.observers[name].splice(index, 1);
+        }
+      };
+    }
+  };
+
+  _proto.sendOnly = function sendOnly(name, args) {
+    var obs = this.observers[name];
+
+    if (obs) {
+      obs.forEach(function (fn) {
+        try {
+          fn.apply(undefined, args);
+        } catch (error) {
+          console.log(error, error.stack);
+        }
+      });
+    }
+  };
+
+  _proto.send = function send(name, args) {
+    this.sendOnly(name + BEFORE_EVENT, args);
+    this.sendOnly(name, args);
+    this.sendOnly(name + AFTER_EVENT, args);
+  };
+
+  return EventHandler;
+}();
+
+function getConfigFromScript() {
+  var script = getCurrentScript();
+  var config = getDataAttributesFromNode(script);
+  return config;
+}
+
+function getDataAttributesFromNode(node) {
+  if (!node) {
+    return {};
+  }
+
+  var dataAttrs = {};
+  var dataRegex = /^data-([\w-]+)$/;
+  var attrs = node.attributes;
+
+  for (var i = 0; i < attrs.length; i++) {
+    var attr = attrs[i];
+
+    if (dataRegex.test(attr.nodeName)) {
+      var key = attr.nodeName.match(dataRegex)[1];
+      var camelCasedkey = key.split('-').map(function (value, index) {
+        return index > 0 ? value.charAt(0).toUpperCase() + value.substring(1) : value;
+      }).join('');
+      dataAttrs[camelCasedkey] = attr.value || attr.nodeValue;
+    }
+  }
+
+  return dataAttrs;
+}
+
+var Config = function () {
+  function Config() {
+    this.config = {
+      serviceName: '',
+      serviceVersion: '',
+      environment: '',
+      serverUrl: 'http://localhost:8200',
+      active: true,
+      instrument: true,
+      disableInstrumentations: [],
+      logLevel: 'warn',
+      breakdownMetrics: false,
+      ignoreTransactions: [],
+      eventsLimit: 80,
+      queueLimit: -1,
+      flushInterval: 500,
+      distributedTracing: true,
+      distributedTracingOrigins: [],
+      distributedTracingHeaderName: 'traceparent',
+      pageLoadTraceId: '',
+      pageLoadSpanId: '',
+      pageLoadSampled: false,
+      pageLoadTransactionName: '',
+      transactionSampleRate: 1.0,
+      centralConfig: false,
+      monitorLongtasks: true,
+      apiVersion: 2,
+      context: {}
+    };
+    this.events = new EventHandler();
+    this.filters = [];
+    this.version = '';
+  }
+
+  var _proto = Config.prototype;
+
+  _proto.init = function init() {
+    var scriptData = getConfigFromScript();
+    this.setConfig(scriptData);
+  };
+
+  _proto.isActive = function isActive() {
+    return this.get('active');
+  };
+
+  _proto.setVersion = function setVersion(version) {
+    this.version = version;
+  };
+
+  _proto.addFilter = function addFilter(cb) {
+    if (typeof cb !== 'function') {
+      throw new Error('Argument to must be function');
+    }
+
+    this.filters.push(cb);
+  };
+
+  _proto.applyFilters = function applyFilters(data) {
+    for (var i = 0; i < this.filters.length; i++) {
+      data = this.filters[i](data);
+
+      if (!data) {
+        return;
+      }
+    }
+
+    return data;
+  };
+
+  _proto.get = function get(key) {
+    return key.split('.').reduce(function (obj, objKey) {
+      return obj && obj[objKey];
+    }, this.config);
+  };
+
+  _proto.setUserContext = function setUserContext(userContext) {
+    if (userContext === void 0) {
+      userContext = {};
+    }
+
+    var context = {};
+    var _userContext = userContext,
+        id = _userContext.id,
+        username = _userContext.username,
+        email = _userContext.email;
+
+    if (typeof id === 'number' || typeof id === 'string') {
+      context.id = id;
+    }
+
+    if (typeof username === 'string') {
+      context.username = username;
+    }
+
+    if (typeof email === 'string') {
+      context.email = email;
+    }
+
+    this.config.context.user = extend(this.config.context.user || {}, context);
+  };
+
+  _proto.setCustomContext = function setCustomContext(customContext) {
+    if (customContext === void 0) {
+      customContext = {};
+    }
+
+    this.config.context.custom = extend(this.config.context.custom || {}, customContext);
+  };
+
+  _proto.addLabels = function addLabels(tags) {
+    var _this = this;
+
+    if (!this.config.context.tags) {
+      this.config.context.tags = {};
+    }
+
+    var keys = Object.keys(tags);
+    keys.forEach(function (k) {
+      return setLabel(k, tags[k], _this.config.context.tags);
+    });
+  };
+
+  _proto.setConfig = function setConfig(properties) {
+    if (properties === void 0) {
+      properties = {};
+    }
+
+    if (properties.serverUrl) {
+      properties.serverUrl = properties.serverUrl.replace(/\/+$/, '');
+    }
+
+    merge(this.config, properties);
+    this.events.send(CONFIG_CHANGE, [this.config]);
+  };
+
+  _proto.validate = function validate(properties) {
+    if (properties === void 0) {
+      properties = {};
+    }
+
+    var requiredKeys = ['serviceName', 'serverUrl'];
+    var errors = {
+      missing: [],
+      invalid: []
+    };
+    Object.keys(properties).forEach(function (key) {
+      if (requiredKeys.indexOf(key) !== -1 && !properties[key]) {
+        errors.missing.push(key);
+      }
+    });
+
+    if (properties.serviceName && !/^[a-zA-Z0-9 _-]+$/.test(properties.serviceName)) {
+      errors.invalid.push({
+        key: 'serviceName',
+        value: properties.serviceName,
+        allowed: 'a-z, A-Z, 0-9, _, -, <space>'
+      });
+    }
+
+    var sampleRate = properties.transactionSampleRate;
+
+    if (typeof sampleRate !== 'undefined' && (typeof sampleRate !== 'number' || isNaN(sampleRate) || sampleRate < 0 || sampleRate > 1)) {
+      errors.invalid.push({
+        key: 'transactionSampleRate',
+        value: sampleRate,
+        allowed: 'Number between 0 and 1'
+      });
+    }
+
+    return errors;
+  };
+
+  _proto.getLocalConfig = function getLocalConfig() {
+    var config = sessionStorage.getItem(LOCAL_CONFIG_KEY);
+
+    if (config) {
+      return JSON.parse(config);
+    }
+  };
+
+  _proto.setLocalConfig = function setLocalConfig(config) {
+    if (config) {
+      sessionStorage.setItem(LOCAL_CONFIG_KEY, JSON.stringify(config));
+    }
+  };
+
+  return Config;
+}();
+
+var LoggingService = function () {
+  function LoggingService(spec) {
+    if (spec === void 0) {
+      spec = {};
+    }
+
+    this.levels = ['trace', 'debug', 'info', 'warn', 'error'];
+    this.level = spec.level || 'info';
+    this.prefix = spec.prefix || '';
+    this.resetLogMethods();
+  }
+
+  var _proto = LoggingService.prototype;
+
+  _proto.shouldLog = function shouldLog(level) {
+    return this.levels.indexOf(level) >= this.levels.indexOf(this.level);
+  };
+
+  _proto.setLevel = function setLevel(level) {
+    this.level = level;
+    this.resetLogMethods();
+  };
+
+  _proto.resetLogMethods = function resetLogMethods() {
+    var loggingService = this;
+    this.levels.forEach(function (level) {
+      loggingService[level] = loggingService.shouldLog(level) ? log : noop$1;
+
+      function log() {
+        var prefix = loggingService.prefix;
+        var normalizedLevel;
+
+        switch (level) {
+          case 'trace':
+            normalizedLevel = 'info';
+            break;
+
+          case 'debug':
+            normalizedLevel = 'info';
+            break;
+
+          default:
+            normalizedLevel = level;
+        }
+
+        var args = arguments;
+
+        if (prefix) {
+          args[0] = prefix + args[0];
+        }
+
+        if (console) {
+          var realMethod = console[normalizedLevel] || console.log;
+
+          if (typeof realMethod === 'function') {
+            realMethod.apply(console, args);
+          }
+        }
+      }
+    });
+  };
+
+  return LoggingService;
+}();
+
+var _serviceCreators;
+var serviceCreators = (_serviceCreators = {}, _serviceCreators[CONFIG_SERVICE] = function () {
+  return new Config();
+}, _serviceCreators[LOGGING_SERVICE] = function () {
+  return new LoggingService({
+    prefix: '[Elastic APM] '
+  });
+}, _serviceCreators[APM_SERVER] = function (factory) {
+  var _factory$getService = factory.getService([CONFIG_SERVICE, LOGGING_SERVICE]),
+      configService = _factory$getService[0],
+      loggingService = _factory$getService[1];
+
+  return new ApmServer(configService, loggingService);
+}, _serviceCreators);
+
+var ServiceFactory = function () {
+  function ServiceFactory() {
+    this.instances = {};
+    this.initialized = false;
+  }
+
+  var _proto = ServiceFactory.prototype;
+
+  _proto.init = function init() {
+    if (this.initialized) {
+      return;
+    }
+
+    this.initialized = true;
+    var configService = this.getService(CONFIG_SERVICE);
+    configService.init();
+    var loggingService = this.getService(LOGGING_SERVICE);
+
+    function setLogLevel(loggingService, configService) {
+      var logLevel = configService.get('logLevel');
+      loggingService.setLevel(logLevel);
+    }
+
+    setLogLevel(loggingService, configService);
+    configService.events.observe(CONFIG_CHANGE, function () {
+      setLogLevel(loggingService, configService);
+    });
+    var apmServer = this.getService(APM_SERVER);
+    apmServer.init();
+  };
+
+  _proto.getService = function getService(name) {
+    var _this = this;
+
+    if (typeof name === 'string') {
+      if (!this.instances[name]) {
+        if (typeof serviceCreators[name] === 'function') {
+          this.instances[name] = serviceCreators[name](this);
+        } else {
+          console.log('Cannot get service, No creator for: ' + name);
+        }
+      }
+
+      return this.instances[name];
+    } else if (Array.isArray(name)) {
+      return name.map(function (n) {
+        return _this.getService(n);
+      });
+    }
+  };
+
+  return ServiceFactory;
+}();
+
+function registerServices() {
+  serviceCreators['ErrorLogging'] = function (serviceFactory) {
+    var _serviceFactory$getSe = serviceFactory.getService([APM_SERVER, CONFIG_SERVICE, 'TransactionService']),
+        apmServer = _serviceFactory$getSe[0],
+        configService = _serviceFactory$getSe[1],
+        transactionService = _serviceFactory$getSe[2];
+
+    return new ErrorLogging(apmServer, configService, transactionService);
+  };
+}
 
 var XHR_TASK = apmSymbol('xhrTask');
 var XHR_LISTENER = apmSymbol('xhrListener');
@@ -2081,55 +3553,6 @@ function patchEventTarget(callback) {
   };
 }
 
-var EventHandler = function () {
-  function EventHandler() {
-    this.observers = {};
-  }
-
-  var _proto = EventHandler.prototype;
-
-  _proto.observe = function observe(name, fn) {
-    var _this = this;
-
-    if (typeof fn === 'function') {
-      if (!this.observers[name]) {
-        this.observers[name] = [];
-      }
-
-      this.observers[name].push(fn);
-      return function () {
-        var index = _this.observers[name].indexOf(fn);
-
-        if (index > -1) {
-          _this.observers[name].splice(index, 1);
-        }
-      };
-    }
-  };
-
-  _proto.sendOnly = function sendOnly(name, args) {
-    var obs = this.observers[name];
-
-    if (obs) {
-      obs.forEach(function (fn) {
-        try {
-          fn.apply(undefined, args);
-        } catch (error) {
-          console.log(error, error.stack);
-        }
-      });
-    }
-  };
-
-  _proto.send = function send(name, args) {
-    this.sendOnly(name + BEFORE_EVENT, args);
-    this.sendOnly(name, args);
-    this.sendOnly(name + AFTER_EVENT, args);
-  };
-
-  return EventHandler;
-}();
-
 var patchEventHandler = new EventHandler();
 var alreadyPatched = false;
 
@@ -2153,7 +3576,6 @@ function patchAll() {
   return patchEventHandler;
 }
 
-var BROWSER_RESPONSIVENESS_BUFFER = 3;
 var SIMILAR_SPAN_TO_TRANSACTION_RATIO = 0.05;
 var TRANSACTION_DURATION_THRESHOLD = 60000;
 function groupSmallContinuouslySimilarSpans(originalSpans, transDuration, threshold) {
@@ -2205,12 +3627,6 @@ function adjustTransactionSpans(transaction) {
   }
 
   return transaction;
-}
-function checkBrowserResponsiveness(transaction, interval, buffer) {
-  var counter = transaction.browserResponsivenessCounter;
-  var duration = transaction.duration();
-  var expectedCount = Math.floor(duration / interval);
-  return counter + buffer >= expectedCount;
 }
 
 var PerformanceMonitoring = function () {
@@ -2433,18 +3849,6 @@ var PerformanceMonitoring = function () {
 
         return false;
       }
-
-      if (tr.type !== PAGE_LOAD) {
-        var wasBrowserResponsive = checkBrowserResponsiveness(tr, BROWSER_RESPONSIVENESS_INTERVAL, BROWSER_RESPONSIVENESS_BUFFER);
-
-        if (!wasBrowserResponsive) {
-          {
-            this._logginService.debug("transaction(" + tr.id + ", " + tr.name + ") was discarded! Browser was not responsive enough during the transaction.", ' duration:', duration, ' browserResponsivenessCounter:', tr.browserResponsivenessCounter);
-          }
-
-          return false;
-        }
-      }
     }
 
     return true;
@@ -2498,124 +3902,6 @@ var PerformanceMonitoring = function () {
 
   return PerformanceMonitoring;
 }();
-
-var SpanBase = function () {
-  function SpanBase(name, type, options) {
-    if (options === void 0) {
-      options = {};
-    }
-
-    if (!name) {
-      name = NAME_UNKNOWN;
-    }
-
-    if (!type) {
-      type = TYPE_CUSTOM;
-    }
-
-    this.name = name;
-    this.type = type;
-    this.options = options;
-    this.id = options.id || generateRandomId(16);
-    this.traceId = options.traceId;
-    this.sampled = options.sampled;
-    this.timestamp = options.timestamp;
-    this._start = getTime(options.startTime);
-    this._end = undefined;
-    this.ended = false;
-    this.onEnd = options.onEnd;
-  }
-
-  var _proto = SpanBase.prototype;
-
-  _proto.ensureContext = function ensureContext() {
-    if (!this.context) {
-      this.context = {};
-    }
-  };
-
-  _proto.addLabels = function addLabels(tags) {
-    this.ensureContext();
-    var ctx = this.context;
-
-    if (!ctx.tags) {
-      ctx.tags = {};
-    }
-
-    var keys = Object.keys(tags);
-    keys.forEach(function (k) {
-      return setLabel(k, tags[k], ctx.tags);
-    });
-  };
-
-  _proto.addContext = function addContext() {
-    for (var _len = arguments.length, context = new Array(_len), _key = 0; _key < _len; _key++) {
-      context[_key] = arguments[_key];
-    }
-
-    if (context.length === 0) return;
-    this.ensureContext();
-    merge.apply(void 0, [this.context].concat(context));
-  };
-
-  _proto.end = function end(endTime) {
-    if (this.ended) {
-      return;
-    }
-
-    this.ended = true;
-    this._end = getTime(endTime);
-    this.callOnEnd();
-  };
-
-  _proto.callOnEnd = function callOnEnd() {
-    if (typeof this.onEnd === 'function') {
-      this.onEnd(this);
-    }
-  };
-
-  _proto.duration = function duration() {
-    return getDuration(this._start, this._end);
-  };
-
-  return SpanBase;
-}();
-
-function _inheritsLoose(subClass, superClass) { subClass.prototype = Object.create(superClass.prototype); subClass.prototype.constructor = subClass; subClass.__proto__ = superClass; }
-
-var Span = function (_SpanBase) {
-  _inheritsLoose(Span, _SpanBase);
-
-  function Span(name, type, options) {
-    var _this;
-
-    _this = _SpanBase.call(this, name, type, options) || this;
-    _this.parentId = _this.options.parentId;
-    _this.subtype = undefined;
-    _this.action = undefined;
-
-    if (_this.type.indexOf('.') !== -1) {
-      var fields = _this.type.split('.', 3);
-
-      _this.type = fields[0];
-      _this.subtype = fields[1];
-      _this.action = fields[2];
-    }
-
-    _this.sync = _this.options.sync;
-    return _this;
-  }
-
-  var _proto = Span.prototype;
-
-  _proto.end = function end(endTime, data) {
-    _SpanBase.prototype.end.call(this, endTime);
-
-    addSpanContext(this, data);
-  };
-
-  return Span;
-}(SpanBase);
 
 var pageLoadBreakdowns = [['domainLookupStart', 'domainLookupEnd', 'DNS'], ['connectStart', 'connectEnd', 'TCP'], ['requestStart', 'responseStart', 'Request'], ['responseStart', 'responseEnd', 'Response'], ['domLoading', 'domComplete', 'Processing'], ['loadEventStart', 'loadEventEnd', 'Load']];
 
@@ -2682,7 +3968,7 @@ function groupSpans(transaction) {
 
     var type = span.type,
         subtype = span.subtype;
-    var key = type;
+    var key = type.replace(TRUNCATED_TYPE, '');
 
     if (subtype) {
       key += '.' + subtype;
@@ -2804,7 +4090,6 @@ var Transaction = function (_SpanBase) {
     _this.captureTimings = false;
     _this.breakdownTimings = [];
     _this.sampled = Math.random() <= _this.options.transactionSampleRate;
-    _this.browserResponsivenessCounter = 0;
     return _this;
   }
 
@@ -2841,7 +4126,7 @@ var Transaction = function (_SpanBase) {
     }
 
     if (options) {
-      this.options = extend(this.options, options);
+      extend(this.options, options);
     }
   };
 
@@ -2888,7 +4173,7 @@ var Transaction = function (_SpanBase) {
 
     for (var sid in this._activeSpans) {
       var span = this._activeSpans[sid];
-      span.type = span.type + '.truncated';
+      span.type = span.type + TRUNCATED_TYPE;
       span.end(endTime);
     }
 
@@ -2937,6 +4222,15 @@ var Transaction = function (_SpanBase) {
   return Transaction;
 }(SpanBase);
 
+var metrics = {
+  fcp: 0,
+  tbt: {
+    start: Infinity,
+    duration: 0
+  }
+};
+var LONG_TASK_THRESHOLD = 50;
+
 function createLongTaskSpans(longtasks) {
   var spans = [];
 
@@ -2947,8 +4241,7 @@ function createLongTaskSpans(longtasks) {
         duration = _longtasks$i.duration,
         attribution = _longtasks$i.attribution;
     var end = startTime + duration;
-    var kind = LONG_TASK;
-    var span = new Span("Longtask(" + name + ")", kind, {
+    var span = new Span("Longtask(" + name + ")", LONG_TASK, {
       startTime: startTime
     });
 
@@ -2983,6 +4276,50 @@ function createLongTaskSpans(longtasks) {
   return spans;
 }
 
+function createFirstInputDelaySpan(fidEntries) {
+  var firstInput = fidEntries[0];
+
+  if (firstInput) {
+    var startTime = firstInput.startTime,
+        processingStart = firstInput.processingStart;
+    var span = new Span('First Input Delay', FIRST_INPUT, {
+      startTime: startTime
+    });
+    span.end(processingStart);
+    return span;
+  }
+}
+function createTotalBlockingTimeSpan(tbtObject) {
+  var start = tbtObject.start,
+      duration = tbtObject.duration;
+  var tbtSpan = new Span('Total Blocking Time', LONG_TASK, {
+    startTime: start
+  });
+  tbtSpan.end(start + duration);
+  return tbtSpan;
+}
+function calculateTotalBlockingTime(longtaskEntries) {
+  longtaskEntries.forEach(function (entry) {
+    var name = entry.name,
+        startTime = entry.startTime,
+        duration = entry.duration;
+
+    if (startTime < metrics.fcp) {
+      return;
+    }
+
+    if (name !== 'self' && name.indexOf('same-origin') === -1) {
+      return;
+    }
+
+    metrics.tbt.start = Math.min(metrics.tbt.start, startTime);
+    var blockingTime = duration - LONG_TASK_THRESHOLD;
+
+    if (blockingTime > 0) {
+      metrics.tbt.duration += blockingTime;
+    }
+  });
+}
 function captureObserverEntries(list, _ref) {
   var capturePaint = _ref.capturePaint;
   var longtaskEntries = list.getEntriesByType(LONG_TASK);
@@ -3000,8 +4337,9 @@ function captureObserverEntries(list, _ref) {
   var lastLcpEntry = lcpEntries[lcpEntries.length - 1];
 
   if (lastLcpEntry) {
-    var lcp = lastLcpEntry.renderTime || lastLcpEntry.loadTimes;
-    result.marks.largestContentfulPaint = parseInt(lcp);
+    var lcp = parseInt(lastLcpEntry.startTime);
+    metrics.lcp = lcp;
+    result.marks.largestContentfulPaint = lcp;
   }
 
   var timing = PERF.timing;
@@ -3009,10 +4347,19 @@ function captureObserverEntries(list, _ref) {
   var fcpEntry = list.getEntriesByName(FIRST_CONTENTFUL_PAINT)[0];
 
   if (fcpEntry) {
-    var fcp = unloadDiff >= 0 ? fcpEntry.startTime - unloadDiff : fcpEntry.startTime;
-    result.marks.firstContentfulPaint = parseInt(fcp);
+    var fcp = parseInt(unloadDiff >= 0 ? fcpEntry.startTime - unloadDiff : fcpEntry.startTime);
+    metrics.fcp = fcp;
+    result.marks.firstContentfulPaint = fcp;
   }
 
+  var fidEntries = list.getEntriesByType(FIRST_INPUT);
+  var fidSpan = createFirstInputDelaySpan(fidEntries);
+
+  if (fidSpan) {
+    result.spans.push(fidSpan);
+  }
+
+  calculateTotalBlockingTime(longtaskEntries);
   return result;
 }
 var PerfEntryRecorder = function () {
@@ -3050,220 +4397,6 @@ var PerfEntryRecorder = function () {
 
   return PerfEntryRecorder;
 }();
-
-var eventPairs = [['domainLookupStart', 'domainLookupEnd', 'Domain lookup'], ['connectStart', 'connectEnd', 'Making a connection to the server'], ['requestStart', 'responseEnd', 'Requesting and receiving the document'], ['domLoading', 'domInteractive', 'Parsing the document, executing sync. scripts'], ['domContentLoadedEventStart', 'domContentLoadedEventEnd', 'Fire "DOMContentLoaded" event'], ['loadEventStart', 'loadEventEnd', 'Fire "load" event']];
-
-function shouldCreateSpan(start, end, trStart, trEnd, baseTime) {
-  if (baseTime === void 0) {
-    baseTime = 0;
-  }
-
-  return typeof start === 'number' && typeof end === 'number' && start >= baseTime && end > start && start - baseTime >= trStart && end - baseTime <= trEnd && end - start < MAX_SPAN_DURATION && start - baseTime < MAX_SPAN_DURATION && end - baseTime < MAX_SPAN_DURATION;
-}
-
-function createNavigationTimingSpans(timings, baseTime, trStart, trEnd) {
-  var spans = [];
-
-  for (var i = 0; i < eventPairs.length; i++) {
-    var start = timings[eventPairs[i][0]];
-    var end = timings[eventPairs[i][1]];
-
-    if (!shouldCreateSpan(start, end, trStart, trEnd, baseTime)) {
-      continue;
-    }
-
-    var span = new Span(eventPairs[i][2], 'hard-navigation.browser-timing');
-
-    if (eventPairs[i][0] === 'requestStart') {
-      span.pageResponse = true;
-    }
-
-    span._start = start - baseTime;
-    span.end(end - baseTime);
-    spans.push(span);
-  }
-
-  return spans;
-}
-
-function createResourceTimingSpan(resourceTimingEntry) {
-  var name = resourceTimingEntry.name,
-      initiatorType = resourceTimingEntry.initiatorType,
-      startTime = resourceTimingEntry.startTime,
-      responseEnd = resourceTimingEntry.responseEnd;
-  var kind = 'resource';
-
-  if (initiatorType) {
-    kind += '.' + initiatorType;
-  }
-
-  var spanName = stripQueryStringFromUrl(name);
-  var span = new Span(spanName, kind);
-  span._start = startTime;
-  span.end(responseEnd, {
-    url: name,
-    entry: resourceTimingEntry
-  });
-  return span;
-}
-
-function createResourceTimingSpans(entries, filterUrls, trStart, trEnd) {
-  var spans = [];
-
-  for (var i = 0; i < entries.length; i++) {
-    var _entries$i = entries[i],
-        initiatorType = _entries$i.initiatorType,
-        name = _entries$i.name,
-        startTime = _entries$i.startTime,
-        responseEnd = _entries$i.responseEnd;
-
-    if (initiatorType === 'xmlhttprequest' || initiatorType === 'fetch' || !name) {
-      continue;
-    }
-
-    if (RESOURCE_INITIATOR_TYPES.indexOf(initiatorType) !== -1) {
-      if (!shouldCreateSpan(startTime, responseEnd, trStart, trEnd)) {
-        continue;
-      }
-
-      spans.push(createResourceTimingSpan(entries[i]));
-    } else {
-      if (initiatorType != null) {
-        continue;
-      }
-
-      var foundAjaxReq = false;
-
-      for (var j = 0; j < filterUrls.length; j++) {
-        var idx = name.lastIndexOf(filterUrls[j]);
-
-        if (idx > -1 && idx === name.length - filterUrls[j].length) {
-          foundAjaxReq = true;
-          break;
-        }
-      }
-
-      if (!foundAjaxReq && shouldCreateSpan(startTime, responseEnd, trStart, trEnd)) {
-        spans.push(createResourceTimingSpan(entries[i]));
-      }
-    }
-  }
-
-  return spans;
-}
-
-function createUserTimingSpans(entries, trStart, trEnd) {
-  var userTimingSpans = [];
-
-  for (var i = 0; i < entries.length; i++) {
-    var _entries$i2 = entries[i],
-        name = _entries$i2.name,
-        startTime = _entries$i2.startTime,
-        duration = _entries$i2.duration;
-    var end = startTime + duration;
-
-    if (duration <= USER_TIMING_THRESHOLD || !shouldCreateSpan(startTime, end, trStart, trEnd)) {
-      continue;
-    }
-
-    var kind = 'app';
-    var span = new Span(name, kind);
-    span._start = startTime;
-    span.end(end);
-    userTimingSpans.push(span);
-  }
-
-  return userTimingSpans;
-}
-
-function getApiSpanNames(_ref) {
-  var spans = _ref.spans;
-  var apiCalls = [];
-
-  for (var i = 0; i < spans.length; i++) {
-    var span = spans[i];
-
-    if (span.type === 'external' && span.subtype === 'http') {
-      apiCalls.push(span.name.split(' ')[1]);
-    }
-  }
-
-  return apiCalls;
-}
-
-var NAVIGATION_TIMING_MARKS = ['fetchStart', 'domainLookupStart', 'domainLookupEnd', 'connectStart', 'connectEnd', 'requestStart', 'responseStart', 'responseEnd', 'domLoading', 'domInteractive', 'domContentLoadedEventStart', 'domContentLoadedEventEnd', 'domComplete', 'loadEventStart', 'loadEventEnd'];
-
-function getNavigationTimingMarks() {
-  var timing = PERF.timing;
-  var fetchStart = timing.fetchStart;
-  var marks = {};
-  NAVIGATION_TIMING_MARKS.forEach(function (timingKey) {
-    var m = timing[timingKey];
-
-    if (m && m >= fetchStart) {
-      marks[timingKey] = parseInt(m - fetchStart);
-    }
-  });
-  return marks;
-}
-
-function getPageLoadMarks() {
-  var marks = getNavigationTimingMarks();
-  var agent = {
-    timeToFirstByte: marks.responseStart,
-    domInteractive: marks.domInteractive,
-    domComplete: marks.domComplete
-  };
-  return {
-    navigationTiming: marks,
-    agent: agent
-  };
-}
-
-function captureNavigation(transaction) {
-  if (!transaction.captureTimings) {
-    return;
-  }
-
-  var trEnd = transaction._end;
-
-  if (transaction.type === PAGE_LOAD) {
-    if (transaction.marks && transaction.marks.custom) {
-      var customMarks = transaction.marks.custom;
-      Object.keys(customMarks).forEach(function (key) {
-        customMarks[key] += transaction._start;
-      });
-    }
-
-    var trStart = 0;
-    transaction._start = trStart;
-    var timings = PERF.timing;
-    createNavigationTimingSpans(timings, timings.fetchStart, trStart, trEnd).forEach(function (span) {
-      span.traceId = transaction.traceId;
-      span.sampled = transaction.sampled;
-
-      if (span.pageResponse && transaction.options.pageLoadSpanId) {
-        span.id = transaction.options.pageLoadSpanId;
-      }
-
-      transaction.spans.push(span);
-    });
-    transaction.addMarks(getPageLoadMarks());
-  }
-
-  if (isPerfTimelineSupported()) {
-    var _trStart = transaction._start;
-    var resourceEntries = PERF.getEntriesByType(RESOURCE);
-    var apiCalls = getApiSpanNames(transaction);
-    createResourceTimingSpans(resourceEntries, apiCalls, _trStart, trEnd).forEach(function (span) {
-      return transaction.spans.push(span);
-    });
-    var userEntries = PERF.getEntriesByType(MEASURE);
-    createUserTimingSpans(userEntries, _trStart, trEnd).forEach(function (span) {
-      return transaction.spans.push(span);
-    });
-  }
-}
 
 var TransactionService = function () {
   function TransactionService(logger, config) {
@@ -3325,31 +4458,6 @@ var TransactionService = function () {
     this.currentTransaction = value;
   };
 
-  _proto.ensureRespInterval = function ensureRespInterval(checkBrowserResponsiveness) {
-    var _this2 = this;
-
-    var clearRespInterval = function clearRespInterval() {
-      clearInterval(_this2.respIntervalId);
-      _this2.respIntervalId = undefined;
-    };
-
-    if (checkBrowserResponsiveness) {
-      if (typeof this.respIntervalId === 'undefined') {
-        this.respIntervalId = setInterval(function () {
-          var tr = _this2.getCurrentTransaction();
-
-          if (tr) {
-            tr.browserResponsivenessCounter++;
-          } else {
-            clearRespInterval();
-          }
-        }, BROWSER_RESPONSIVENESS_INTERVAL);
-      }
-    } else if (typeof this.respIntervalId !== 'undefined') {
-      clearRespInterval();
-    }
-  };
-
   _proto.createOptions = function createOptions(options) {
     var config = this._config.config;
     var presetOptions = {
@@ -3376,16 +4484,16 @@ var TransactionService = function () {
     if (!tr) {
       tr = this.ensureCurrentTransaction(name, type, perfOptions);
     } else if (tr.canReuse() && perfOptions.canReuse) {
-      {
-        this._logger.debug("redefining transaction(" + tr.id + ", " + tr.name + ", " + tr.type + ")", 'to', "(" + name + ", " + type + ")", tr);
-      }
-
-      var redefineType;
+      var redefineType = tr.type;
       var currentTypeOrder = TRANSACTION_TYPE_ORDER.indexOf(tr.type);
       var redefineTypeOrder = TRANSACTION_TYPE_ORDER.indexOf(type);
 
-      if (currentTypeOrder !== -1 && redefineTypeOrder !== -1 && redefineTypeOrder < currentTypeOrder) {
+      if (currentTypeOrder >= 0 && redefineTypeOrder < currentTypeOrder) {
         redefineType = type;
+      }
+
+      {
+        this._logger.debug("redefining transaction(" + tr.id + ", " + tr.name + ", " + tr.type + ")", 'to', "(" + (name || tr.name) + ", " + redefineType + ")", tr);
       }
 
       tr.redefine(name, redefineType, perfOptions);
@@ -3399,15 +4507,12 @@ var TransactionService = function () {
       tr = this.ensureCurrentTransaction(name, type, perfOptions);
     }
 
-    var checkBrowserResponsiveness = true;
-
     if (tr.type === PAGE_LOAD) {
       if (!isRedefined) {
         this.recorder.start(LARGEST_CONTENTFUL_PAINT);
         this.recorder.start(PAINT);
+        this.recorder.start(FIRST_INPUT);
       }
-
-      checkBrowserResponsiveness = false;
 
       if (perfOptions.pageLoadTraceId) {
         tr.traceId = perfOptions.pageLoadTraceId;
@@ -3430,12 +4535,11 @@ var TransactionService = function () {
       tr.captureTimings = true;
     }
 
-    this.ensureRespInterval(checkBrowserResponsiveness);
     return tr;
   };
 
   _proto.startTransaction = function startTransaction(name, type, options) {
-    var _this3 = this;
+    var _this2 = this;
 
     var perfOptions = this.createOptions(options);
     var tr;
@@ -3453,7 +4557,7 @@ var TransactionService = function () {
     }
 
     tr.onEnd = function () {
-      return _this3.handleTransactionEnd(tr);
+      return _this2.handleTransactionEnd(tr);
     };
 
     if (fireOnstartHook) {
@@ -3468,51 +4572,69 @@ var TransactionService = function () {
   };
 
   _proto.handleTransactionEnd = function handleTransactionEnd(tr) {
-    var _this4 = this;
+    var _this3 = this;
 
     this.recorder.stop();
+    var currentUrl = window.location.href;
     return Promise$1.resolve().then(function () {
       var name = tr.name,
           type = tr.type;
+      var lastHiddenStart = state.lastHiddenStart;
 
-      if (_this4.shouldIgnoreTransaction(name) || type === TEMPORARY_TYPE) {
+      if (lastHiddenStart >= tr._start) {
         {
-          _this4._logger.debug("transaction(" + tr.id + ", " + name + ", " + type + ") is ignored");
+          _this3._logger.debug("transaction(" + tr.id + ", " + name + ", " + type + ") was discarded! The page was hidden during the transaction!");
+        }
+
+        return;
+      }
+
+      if (_this3.shouldIgnoreTransaction(name) || type === TEMPORARY_TYPE) {
+        {
+          _this3._logger.debug("transaction(" + tr.id + ", " + name + ", " + type + ") is ignored");
         }
 
         return;
       }
 
       if (type === PAGE_LOAD) {
-        var pageLoadTransactionName = _this4._config.get('pageLoadTransactionName');
+        var pageLoadTransactionName = _this3._config.get('pageLoadTransactionName');
 
         if (name === NAME_UNKNOWN && pageLoadTransactionName) {
           tr.name = pageLoadTransactionName;
         }
+
+        if (tr.captureTimings && metrics.tbt.duration > 0) {
+          tr.spans.push(createTotalBlockingTimeSpan(metrics.tbt));
+        }
+      }
+
+      if (tr.name === NAME_UNKNOWN) {
+        tr.name = slugifyUrl(currentUrl);
       }
 
       captureNavigation(tr);
 
-      _this4.adjustTransactionTime(tr);
+      _this3.adjustTransactionTime(tr);
 
-      var breakdownMetrics = _this4._config.get('breakdownMetrics');
+      var breakdownMetrics = _this3._config.get('breakdownMetrics');
 
       if (breakdownMetrics) {
         tr.captureBreakdown();
       }
 
-      var configContext = _this4._config.get('context');
+      var configContext = _this3._config.get('context');
 
       addTransactionContext(tr, configContext);
 
-      _this4._config.events.send(TRANSACTION_END, [tr]);
+      _this3._config.events.send(TRANSACTION_END, [tr]);
 
       {
-        _this4._logger.debug("end transaction(" + tr.id + ", " + tr.name + ")", tr);
+        _this3._logger.debug("end transaction(" + tr.id + ", " + tr.name + ")", tr);
       }
     }, function (err) {
       {
-        _this4._logger.debug("error ending transaction(" + tr.id + ", " + tr.name + ")", err);
+        _this3._logger.debug("error ending transaction(" + tr.id + ", " + tr.name + ")", err);
       }
     });
   };
@@ -3538,7 +4660,7 @@ var TransactionService = function () {
 
       if (span._end > transactionEnd) {
         span._end = transactionEnd;
-        span.type += '.truncated';
+        span.type += TRUNCATED_TYPE;
       }
 
       if (span._start > transactionEnd) {
@@ -3616,1066 +4738,25 @@ var TransactionService = function () {
   return TransactionService;
 }();
 
-var PerformanceMonitoring$1 = {
-  PerformanceMonitoring: PerformanceMonitoring,
-  registerServices: function registerServices(serviceFactory) {
-    serviceFactory.registerServiceCreator('TransactionService', function () {
-      var configService = serviceFactory.getService('ConfigService');
-      var loggingService = serviceFactory.getService('LoggingService');
-      return new TransactionService(loggingService, configService);
-    });
-    serviceFactory.registerServiceCreator('PerformanceMonitoring', function () {
-      var configService = serviceFactory.getService('ConfigService');
-      var loggingService = serviceFactory.getService('LoggingService');
-      var apmService = serviceFactory.getService('ApmServer');
-      var transactionService = serviceFactory.getService('TransactionService');
-      return new PerformanceMonitoring(apmService, configService, loggingService, transactionService);
-    });
-  }
-};
+function registerServices$1() {
+  serviceCreators['TransactionService'] = function (serviceFactory) {
+    var _serviceFactory$getSe = serviceFactory.getService([LOGGING_SERVICE, CONFIG_SERVICE]),
+        loggingService = _serviceFactory$getSe[0],
+        configService = _serviceFactory$getSe[1];
 
-var Queue = function () {
-  function Queue(onFlush, opts) {
-    if (opts === void 0) {
-      opts = {};
-    }
-
-    this.onFlush = onFlush;
-    this.items = [];
-    this.queueLimit = opts.queueLimit || -1;
-    this.flushInterval = opts.flushInterval || 0;
-    this.timeoutId = undefined;
-  }
-
-  var _proto = Queue.prototype;
-
-  _proto._setTimer = function _setTimer() {
-    var _this = this;
-
-    this.timeoutId = setTimeout(function () {
-      return _this.flush();
-    }, this.flushInterval);
+    return new TransactionService(loggingService, configService);
   };
 
-  _proto._clear = function _clear() {
-    if (typeof this.timeoutId !== 'undefined') {
-      clearTimeout(this.timeoutId);
-      this.timeoutId = undefined;
-    }
+  serviceCreators['PerformanceMonitoring'] = function (serviceFactory) {
+    var _serviceFactory$getSe2 = serviceFactory.getService([APM_SERVER, CONFIG_SERVICE, LOGGING_SERVICE, 'TransactionService']),
+        apmServer = _serviceFactory$getSe2[0],
+        configService = _serviceFactory$getSe2[1],
+        loggingService = _serviceFactory$getSe2[2],
+        transactionService = _serviceFactory$getSe2[3];
 
-    this.items = [];
-  };
-
-  _proto.flush = function flush() {
-    this.onFlush(this.items);
-
-    this._clear();
-  };
-
-  _proto.add = function add(item) {
-    this.items.push(item);
-
-    if (this.queueLimit !== -1 && this.items.length >= this.queueLimit) {
-      this.flush();
-    } else {
-      if (typeof this.timeoutId === 'undefined') {
-        this._setTimer();
-      }
-    }
-  };
-
-  return Queue;
-}();
-
-function throttle(fn, onThrottle, opts) {
-  var context = this;
-  var limit = opts.limit;
-  var interval = opts.interval;
-  var counter = 0;
-  var timeoutId;
-  return function () {
-    counter++;
-
-    if (typeof timeoutId === 'undefined') {
-      timeoutId = setTimeout(function () {
-        counter = 0;
-        timeoutId = undefined;
-      }, interval);
-    }
-
-    if (counter > limit && typeof onThrottle === 'function') {
-      return onThrottle.apply(context, arguments);
-    } else {
-      return fn.apply(context, arguments);
-    }
+    return new PerformanceMonitoring(apmServer, configService, loggingService, transactionService);
   };
 }
-
-var NDJSON = function () {
-  function NDJSON() {}
-
-  NDJSON.stringify = function stringify(object) {
-    return JSON.stringify(object) + '\n';
-  };
-
-  return NDJSON;
-}();
-
-var COMPRESSED_NAV_TIMING_MARKS = ['fs', 'ls', 'le', 'cs', 'ce', 'qs', 'rs', 're', 'dl', 'di', 'ds', 'de', 'dc', 'es', 'ee'];
-
-function compressStackFrames(frames) {
-  return frames.map(function (frame) {
-    return {
-      ap: frame.abs_path,
-      f: frame.filename,
-      fn: frame.function,
-      li: frame.lineno,
-      co: frame.colno
-    };
-  });
-}
-
-function compressResponse(response) {
-  return {
-    ts: response.transfer_size,
-    ebs: response.encoded_body_size,
-    dbs: response.decoded_body_size
-  };
-}
-
-function compressHTTP(http) {
-  var compressed = {};
-
-  for (var _i = 0, _Object$keys = Object.keys(http); _i < _Object$keys.length; _i++) {
-    var key = _Object$keys[_i];
-    var value = http[key];
-
-    switch (key) {
-      case 'method':
-        compressed.mt = value;
-        break;
-
-      case 'status_code':
-        compressed.sc = value;
-        break;
-
-      case 'url':
-        compressed.url = value;
-        break;
-
-      case 'response':
-        compressed.r = compressResponse(value);
-        break;
-    }
-  }
-
-  return compressed;
-}
-
-function compressContext(context) {
-  if (!context) {
-    return null;
-  }
-
-  var compressed = {};
-
-  for (var _i2 = 0, _Object$keys2 = Object.keys(context); _i2 < _Object$keys2.length; _i2++) {
-    var key = _Object$keys2[_i2];
-    var value = context[key];
-
-    switch (key) {
-      case 'page':
-        compressed.p = {
-          rf: value.referer,
-          url: value.url
-        };
-        break;
-
-      case 'http':
-        compressed.h = compressHTTP(value);
-        break;
-
-      case 'response':
-        compressed.r = compressResponse(value);
-        break;
-
-      case 'user':
-        compressed.u = {
-          id: value.id,
-          un: value.username,
-          em: value.email
-        };
-        break;
-
-      case 'destination':
-        var service = value.service;
-        compressed.dt = {
-          se: {
-            n: service.name,
-            t: service.type,
-            rc: service.resource
-          },
-          ad: value.address,
-          po: value.port
-        };
-        break;
-
-      case 'custom':
-        compressed.cu = value;
-        break;
-    }
-  }
-
-  return compressed;
-}
-
-function compressMarks(marks) {
-  if (!marks) {
-    return null;
-  }
-
-  var navigationTiming = marks.navigationTiming,
-      agent = marks.agent;
-  var compressed = {
-    nt: {},
-    a: {}
-  };
-  COMPRESSED_NAV_TIMING_MARKS.forEach(function (mark, index) {
-    var mapping = NAVIGATION_TIMING_MARKS[index];
-    compressed.nt[mark] = navigationTiming[mapping];
-  });
-  compressed.a = {
-    fb: compressed.nt.rs,
-    di: compressed.nt.di,
-    dc: compressed.nt.dc
-  };
-  var fp = agent.firstContentfulPaint;
-  var lp = agent.largestContentfulPaint;
-
-  if (fp) {
-    compressed.a.fp = fp;
-  }
-
-  if (lp) {
-    compressed.a.lp = lp;
-  }
-
-  return compressed;
-}
-
-function compressMetadata(metadata) {
-  var service = metadata.service,
-      labels = metadata.labels;
-  var agent = service.agent,
-      language = service.language;
-  return {
-    se: {
-      n: service.name,
-      ve: service.version,
-      a: {
-        n: agent.name,
-        ve: agent.version
-      },
-      la: {
-        n: language.name
-      },
-      en: service.environment
-    },
-    l: labels
-  };
-}
-function compressTransaction(transaction) {
-  var spans = transaction.spans.map(function (span) {
-    var spanData = {
-      id: span.id,
-      n: span.name,
-      t: span.type,
-      s: span.start,
-      d: span.duration,
-      c: compressContext(span.context)
-    };
-
-    if (span.parent_id !== transaction.id) {
-      spanData.pid = span.parent_id;
-    }
-
-    if (span.sync === true) {
-      spanData.sy = true;
-    }
-
-    if (span.subtype) {
-      spanData.su = span.subtype;
-    }
-
-    if (span.action) {
-      spanData.ac = span.action;
-    }
-
-    return spanData;
-  });
-  return {
-    id: transaction.id,
-    tid: transaction.trace_id,
-    n: transaction.name,
-    t: transaction.type,
-    d: transaction.duration,
-    c: compressContext(transaction.context),
-    m: compressMarks(transaction.marks),
-    b: compressMetricsets(transaction.breakdown),
-    y: spans,
-    yc: {
-      sd: spans.length
-    },
-    sm: transaction.sampled
-  };
-}
-function compressError(error) {
-  var exception = error.exception;
-  var compressed = {
-    id: error.id,
-    cl: error.culprit,
-    ex: {
-      mg: exception.message,
-      st: compressStackFrames(exception.stacktrace),
-      t: error.type
-    },
-    c: compressContext(error.context)
-  };
-  var transaction = error.transaction;
-
-  if (transaction) {
-    compressed.tid = error.trace_id;
-    compressed.pid = error.parent_id;
-    compressed.xid = error.transaction_id;
-    compressed.x = {
-      t: transaction.type,
-      sm: transaction.sampled
-    };
-  }
-
-  return compressed;
-}
-function compressMetricsets(breakdowns) {
-  return breakdowns.map(function (_ref) {
-    var span = _ref.span,
-        samples = _ref.samples;
-    var isSpan = span != null;
-
-    if (isSpan) {
-      return {
-        y: {
-          t: span.type
-        },
-        sa: {
-          ysc: {
-            v: samples['span.self_time.count'].value
-          },
-          yss: {
-            v: samples['span.self_time.sum.us'].value
-          }
-        }
-      };
-    }
-
-    return {
-      sa: {
-        xdc: {
-          v: samples['transaction.duration.count'].value
-        },
-        xds: {
-          v: samples['transaction.duration.sum.us'].value
-        },
-        xbc: {
-          v: samples['transaction.breakdown.count'].value
-        }
-      }
-    };
-  });
-}
-
-var THROTTLE_INTERVAL = 60000;
-
-var ApmServer = function () {
-  function ApmServer(configService, loggingService) {
-    this._configService = configService;
-    this._loggingService = loggingService;
-    this.queue = undefined;
-    this.throttleEvents = noop$1;
-    this.initialized = false;
-  }
-
-  var _proto = ApmServer.prototype;
-
-  _proto.init = function init() {
-    if (this.initialized) {
-      return;
-    }
-
-    this.initialized = true;
-
-    this._initQueue();
-  };
-
-  _proto._initQueue = function _initQueue() {
-    var _this = this;
-
-    var queueLimit = this._configService.get('queueLimit');
-
-    var flushInterval = this._configService.get('flushInterval');
-
-    var limit = this._configService.get('eventsLimit');
-
-    var onFlush = function onFlush(events) {
-      var promise = _this.sendEvents(events);
-
-      if (promise) {
-        promise.catch(function (reason) {
-          _this._loggingService.warn('Failed sending events!', _this._constructError(reason));
-        });
-      }
-    };
-
-    this.queue = new Queue(onFlush, {
-      queueLimit: queueLimit,
-      flushInterval: flushInterval
-    });
-    this.throttleEvents = throttle(this.queue.add.bind(this.queue), function () {
-      return _this._loggingService.warn('Dropped events due to throttling!');
-    }, {
-      limit: limit,
-      interval: THROTTLE_INTERVAL
-    });
-  };
-
-  _proto._postJson = function _postJson(endPoint, payload) {
-    return this._makeHttpRequest('POST', endPoint, {
-      payload: payload,
-      headers: {
-        'Content-Type': 'application/x-ndjson'
-      }
-    }).then(function (_ref) {
-      var responseText = _ref.responseText;
-      return responseText;
-    });
-  };
-
-  _proto._constructError = function _constructError(reason) {
-    var url = reason.url,
-        status = reason.status,
-        responseText = reason.responseText;
-
-    if (typeof status == 'undefined') {
-      return reason;
-    }
-
-    var message = url + ' HTTP status: ' + status;
-
-    if ( responseText) {
-      try {
-        var serverErrors = [];
-        var response = JSON.parse(responseText);
-
-        if (response.errors && response.errors.length > 0) {
-          response.errors.forEach(function (err) {
-            return serverErrors.push(err.message);
-          });
-          message += ' ' + serverErrors.join(',');
-        }
-      } catch (e) {
-        this._loggingService.debug('Error parsing response from APM server', e);
-      }
-    }
-
-    return new Error(message);
-  };
-
-  _proto._makeHttpRequest = function _makeHttpRequest(method, url, _temp) {
-    var _ref2 = _temp === void 0 ? {
-      timeout: 10000
-    } : _temp,
-        timeout = _ref2.timeout,
-        payload = _ref2.payload,
-        headers = _ref2.headers;
-
-    return new Promise$1(function (resolve, reject) {
-      var xhr = new window.XMLHttpRequest();
-      xhr[XHR_IGNORE] = true;
-      xhr.open(method, url, true);
-      xhr.timeout = timeout;
-
-      if (headers) {
-        for (var header in headers) {
-          if (headers.hasOwnProperty(header)) {
-            xhr.setRequestHeader(header, headers[header]);
-          }
-        }
-      }
-
-      xhr.onreadystatechange = function () {
-        if (xhr.readyState === 4) {
-          var status = xhr.status,
-              responseText = xhr.responseText;
-
-          if (status === 0 || status > 399 && status < 600) {
-            reject({
-              url: url,
-              status: status,
-              responseText: responseText
-            });
-          } else {
-            resolve(xhr);
-          }
-        }
-      };
-
-      xhr.onerror = function () {
-        var status = xhr.status,
-            responseText = xhr.responseText;
-        reject({
-          url: url,
-          status: status,
-          responseText: responseText
-        });
-      };
-
-      xhr.send(payload);
-    });
-  };
-
-  _proto.fetchConfig = function fetchConfig(serviceName, environment) {
-    var _this2 = this;
-
-    var serverUrl = this._configService.get('serverUrl');
-
-    var configEndpoint = serverUrl + "/config/v1/rum/agents";
-
-    if (!serviceName) {
-      return Promise$1.reject('serviceName is required for fetching central config.');
-    }
-
-    configEndpoint += "?service.name=" + serviceName;
-
-    if (environment) {
-      configEndpoint += "&service.environment=" + environment;
-    }
-
-    var localConfig = this._configService.getLocalConfig();
-
-    if (localConfig) {
-      configEndpoint += "&ifnonematch=" + localConfig.etag;
-    }
-
-    return this._makeHttpRequest('GET', configEndpoint, {
-      timeout: 5000
-    }).then(function (xhr) {
-      var status = xhr.status,
-          responseText = xhr.responseText;
-
-      if (status === 304) {
-        return localConfig;
-      } else {
-        var remoteConfig = JSON.parse(responseText);
-        var etag = xhr.getResponseHeader('etag');
-
-        if (etag) {
-          remoteConfig.etag = etag.replace(/["]/g, '');
-
-          _this2._configService.setLocalConfig(remoteConfig);
-        }
-
-        return remoteConfig;
-      }
-    }).catch(function (reason) {
-      var error = _this2._constructError(reason);
-
-      return Promise$1.reject(error);
-    });
-  };
-
-  _proto.createMetaData = function createMetaData() {
-    var cfg = this._configService;
-    var metadata = {
-      service: {
-        name: cfg.get('serviceName'),
-        version: cfg.get('serviceVersion'),
-        agent: {
-          name: 'rum-js',
-          version: cfg.version
-        },
-        language: {
-          name: 'javascript'
-        },
-        environment: cfg.get('environment')
-      },
-      labels: cfg.get('context.tags')
-    };
-    return truncateModel(METADATA_MODEL, metadata);
-  };
-
-  _proto.addError = function addError(error) {
-    var _this$throttleEvents;
-
-    this.throttleEvents((_this$throttleEvents = {}, _this$throttleEvents[ERRORS] = error, _this$throttleEvents));
-  };
-
-  _proto.addTransaction = function addTransaction(transaction) {
-    var _this$throttleEvents2;
-
-    this.throttleEvents((_this$throttleEvents2 = {}, _this$throttleEvents2[TRANSACTIONS] = transaction, _this$throttleEvents2));
-  };
-
-  _proto.ndjsonErrors = function ndjsonErrors(errors, compress) {
-    var key = compress ? 'e' : 'error';
-    return errors.map(function (error) {
-      var _NDJSON$stringify;
-
-      return NDJSON.stringify((_NDJSON$stringify = {}, _NDJSON$stringify[key] = compress ? compressError(error) : error, _NDJSON$stringify));
-    });
-  };
-
-  _proto.ndjsonMetricsets = function ndjsonMetricsets(metricsets) {
-    return metricsets.map(function (metricset) {
-      return NDJSON.stringify({
-        metricset: metricset
-      });
-    }).join('');
-  };
-
-  _proto.ndjsonTransactions = function ndjsonTransactions(transactions, compress) {
-    var _this3 = this;
-
-    var key = compress ? 'x' : 'transaction';
-    return transactions.map(function (tr) {
-      var _NDJSON$stringify2;
-
-      var spans = '',
-          breakdowns = '';
-
-      if (!compress) {
-        if (tr.spans) {
-          spans = tr.spans.map(function (span) {
-            return NDJSON.stringify({
-              span: span
-            });
-          }).join('');
-          delete tr.spans;
-        }
-
-        if (tr.breakdown) {
-          breakdowns = _this3.ndjsonMetricsets(tr.breakdown);
-          delete tr.breakdown;
-        }
-      }
-
-      return NDJSON.stringify((_NDJSON$stringify2 = {}, _NDJSON$stringify2[key] = compress ? compressTransaction(tr) : tr, _NDJSON$stringify2)) + spans + breakdowns;
-    });
-  };
-
-  _proto.sendEvents = function sendEvents(events) {
-    var _payload, _NDJSON$stringify3;
-
-    if (events.length === 0) {
-      return;
-    }
-
-    var transactions = [];
-    var errors = [];
-
-    for (var i = 0; i < events.length; i++) {
-      var event = events[i];
-
-      if (event[TRANSACTIONS]) {
-        transactions.push(event[TRANSACTIONS]);
-      }
-
-      if (event[ERRORS]) {
-        errors.push(event[ERRORS]);
-      }
-    }
-
-    if (transactions.length === 0 && errors.length === 0) {
-      return;
-    }
-
-    var cfg = this._configService;
-    var payload = (_payload = {}, _payload[TRANSACTIONS] = transactions, _payload[ERRORS] = errors, _payload);
-    var filteredPayload = cfg.applyFilters(payload);
-
-    if (!filteredPayload) {
-      this._loggingService.warn('Dropped payload due to filtering!');
-
-      return;
-    }
-
-    var apiVersion = cfg.get('apiVersion');
-    var compress = apiVersion > 2 ? true : false;
-    var ndjson = [];
-    var metadata = this.createMetaData();
-    var metadataKey = compress ? 'm' : 'metadata';
-    ndjson.push(NDJSON.stringify((_NDJSON$stringify3 = {}, _NDJSON$stringify3[metadataKey] = compress ? compressMetadata(metadata) : metadata, _NDJSON$stringify3)));
-    ndjson = ndjson.concat(this.ndjsonErrors(filteredPayload[ERRORS], compress), this.ndjsonTransactions(filteredPayload[TRANSACTIONS], compress));
-    var ndjsonPayload = ndjson.join('');
-    var endPoint = cfg.get('serverUrl') + ("/intake/v" + apiVersion + "/rum/events");
-    return this._postJson(endPoint, ndjsonPayload);
-  };
-
-  return ApmServer;
-}();
-
-function getConfigFromScript() {
-  var script = getCurrentScript();
-  var config = getDataAttributesFromNode(script);
-  return config;
-}
-
-function getDataAttributesFromNode(node) {
-  if (!node) {
-    return {};
-  }
-
-  var dataAttrs = {};
-  var dataRegex = /^data-([\w-]+)$/;
-  var attrs = node.attributes;
-
-  for (var i = 0; i < attrs.length; i++) {
-    var attr = attrs[i];
-
-    if (dataRegex.test(attr.nodeName)) {
-      var key = attr.nodeName.match(dataRegex)[1];
-      var camelCasedkey = key.split('-').map(function (value, index) {
-        return index > 0 ? value.charAt(0).toUpperCase() + value.substring(1) : value;
-      }).join('');
-      dataAttrs[camelCasedkey] = attr.value || attr.nodeValue;
-    }
-  }
-
-  return dataAttrs;
-}
-
-var Config = function () {
-  function Config() {
-    this.config = {};
-    this.defaults = {
-      serviceName: '',
-      serviceVersion: '',
-      environment: '',
-      serverUrl: 'http://localhost:8200',
-      active: true,
-      instrument: true,
-      disableInstrumentations: [],
-      logLevel: 'warn',
-      breakdownMetrics: false,
-      ignoreTransactions: [],
-      eventsLimit: 80,
-      queueLimit: -1,
-      flushInterval: 500,
-      distributedTracing: true,
-      distributedTracingOrigins: [],
-      distributedTracingHeaderName: 'traceparent',
-      pageLoadTraceId: '',
-      pageLoadSpanId: '',
-      pageLoadSampled: false,
-      pageLoadTransactionName: '',
-      transactionSampleRate: 1.0,
-      centralConfig: false,
-      monitorLongtasks: true,
-      apiVersion: 3,
-      context: {}
-    };
-    this.events = new EventHandler();
-    this.filters = [];
-    this.version = '';
-  }
-
-  var _proto = Config.prototype;
-
-  _proto.init = function init() {
-    var scriptData = getConfigFromScript();
-    this.setConfig(scriptData);
-  };
-
-  _proto.isActive = function isActive() {
-    return this.get('active');
-  };
-
-  _proto.setVersion = function setVersion(version) {
-    this.version = version;
-  };
-
-  _proto.addFilter = function addFilter(cb) {
-    if (typeof cb !== 'function') {
-      throw new Error('Argument to must be function');
-    }
-
-    this.filters.push(cb);
-  };
-
-  _proto.applyFilters = function applyFilters(data) {
-    for (var i = 0; i < this.filters.length; i++) {
-      data = this.filters[i](data);
-
-      if (!data) {
-        return;
-      }
-    }
-
-    return data;
-  };
-
-  _proto.get = function get(key) {
-    return key.split('.').reduce(function (obj, objKey) {
-      return obj && obj[objKey];
-    }, this.config);
-  };
-
-  _proto.setUserContext = function setUserContext(userContext) {
-    if (userContext === void 0) {
-      userContext = {};
-    }
-
-    var context = {};
-    var _userContext = userContext,
-        id = _userContext.id,
-        username = _userContext.username,
-        email = _userContext.email;
-
-    if (typeof id === 'number' || typeof id === 'string') {
-      context.id = id;
-    }
-
-    if (typeof username === 'string') {
-      context.username = username;
-    }
-
-    if (typeof email === 'string') {
-      context.email = email;
-    }
-
-    this.config.context.user = extend(this.config.context.user || {}, context);
-  };
-
-  _proto.setCustomContext = function setCustomContext(customContext) {
-    if (customContext === void 0) {
-      customContext = {};
-    }
-
-    this.config.context.custom = extend(this.config.context.custom || {}, customContext);
-  };
-
-  _proto.addLabels = function addLabels(tags) {
-    var _this = this;
-
-    if (!this.config.context.tags) {
-      this.config.context.tags = {};
-    }
-
-    var keys = Object.keys(tags);
-    keys.forEach(function (k) {
-      return setLabel(k, tags[k], _this.config.context.tags);
-    });
-  };
-
-  _proto.setConfig = function setConfig(properties) {
-    if (properties === void 0) {
-      properties = {};
-    }
-
-    if (properties.serverUrl) {
-      properties.serverUrl = properties.serverUrl.replace(/\/+$/, '');
-    }
-
-    this.config = merge({}, this.defaults, this.config, properties);
-    this.events.send(CONFIG_CHANGE, [this.config]);
-  };
-
-  _proto.validate = function validate(properties) {
-    if (properties === void 0) {
-      properties = {};
-    }
-
-    var requiredKeys = ['serviceName', 'serverUrl'];
-    var errors = {
-      missing: [],
-      invalid: []
-    };
-    Object.keys(properties).forEach(function (key) {
-      if (requiredKeys.indexOf(key) !== -1 && !properties[key]) {
-        errors.missing.push(key);
-      }
-    });
-
-    if (properties.serviceName && !/^[a-zA-Z0-9 _-]+$/.test(properties.serviceName)) {
-      errors.invalid.push({
-        key: 'serviceName',
-        value: properties.serviceName,
-        allowed: 'a-z, A-Z, 0-9, _, -, <space>'
-      });
-    }
-
-    var sampleRate = properties.transactionSampleRate;
-
-    if (typeof sampleRate !== 'undefined' && (typeof sampleRate !== 'number' || isNaN(sampleRate) || sampleRate < 0 || sampleRate > 1)) {
-      errors.invalid.push({
-        key: 'transactionSampleRate',
-        value: sampleRate,
-        allowed: 'Number between 0 and 1'
-      });
-    }
-
-    return errors;
-  };
-
-  _proto.getLocalConfig = function getLocalConfig() {
-    var config = sessionStorage.getItem(LOCAL_CONFIG_KEY);
-
-    if (config) {
-      return JSON.parse(config);
-    }
-  };
-
-  _proto.setLocalConfig = function setLocalConfig(config) {
-    if (config) {
-      sessionStorage.setItem(LOCAL_CONFIG_KEY, JSON.stringify(config));
-    }
-  };
-
-  return Config;
-}();
-
-var LoggingService = function () {
-  function LoggingService(spec) {
-    if (spec === void 0) {
-      spec = {};
-    }
-
-    this.levels = ['trace', 'debug', 'info', 'warn', 'error'];
-    this.level = spec.level || 'info';
-    this.prefix = spec.prefix || '';
-    this.resetLogMethods();
-  }
-
-  var _proto = LoggingService.prototype;
-
-  _proto.shouldLog = function shouldLog(level) {
-    return this.levels.indexOf(level) >= this.levels.indexOf(this.level);
-  };
-
-  _proto.setLevel = function setLevel(level) {
-    this.level = level;
-    this.resetLogMethods();
-  };
-
-  _proto.resetLogMethods = function resetLogMethods() {
-    var loggingService = this;
-    this.levels.forEach(function (level) {
-      loggingService[level] = loggingService.shouldLog(level) ? log : noop$1;
-
-      function log() {
-        var prefix = loggingService.prefix;
-        var normalizedLevel;
-
-        switch (level) {
-          case 'trace':
-            normalizedLevel = 'info';
-            break;
-
-          case 'debug':
-            normalizedLevel = 'info';
-            break;
-
-          default:
-            normalizedLevel = level;
-        }
-
-        var args = arguments;
-
-        if (prefix) {
-          args[0] = prefix + args[0];
-        }
-
-        if (console) {
-          var realMethod = console[normalizedLevel] || console.log;
-
-          if (typeof realMethod === 'function') {
-            realMethod.apply(console, args);
-          }
-        }
-      }
-    });
-  };
-
-  return LoggingService;
-}();
-
-var ServiceFactory = function () {
-  function ServiceFactory() {
-    this._serviceCreators = {};
-    this._serviceInstances = {};
-    this.initialized = false;
-  }
-
-  var _proto = ServiceFactory.prototype;
-
-  _proto.registerCoreServices = function registerCoreServices() {
-    var serviceFactory = this;
-    this.registerServiceCreator('ConfigService', function () {
-      return new Config();
-    });
-    this.registerServiceCreator('LoggingService', function () {
-      return new LoggingService({
-        prefix: '[Elastic APM] '
-      });
-    });
-    this.registerServiceCreator('ApmServer', function () {
-      return new ApmServer(serviceFactory.getService('ConfigService'), serviceFactory.getService('LoggingService'));
-    });
-  };
-
-  _proto.init = function init() {
-    if (this.initialized) {
-      return;
-    }
-
-    this.initialized = true;
-    var configService = this.getService('ConfigService');
-    configService.init();
-    var loggingService = this.getService('LoggingService');
-
-    function setLogLevel(loggingService, configService) {
-      var logLevel = configService.get('logLevel');
-      loggingService.setLevel(logLevel);
-    }
-
-    setLogLevel(loggingService, configService);
-    configService.events.observe(CONFIG_CHANGE, function () {
-      setLogLevel(loggingService, configService);
-    });
-    var apmServer = this.getService('ApmServer');
-    apmServer.init();
-  };
-
-  _proto.registerServiceCreator = function registerServiceCreator(name, creator) {
-    this._serviceCreators[name] = creator;
-  };
-
-  _proto.registerServiceInstance = function registerServiceInstance(name, instance) {
-    this._serviceInstances[name] = instance;
-  };
-
-  _proto.getService = function getService(name) {
-    if (!this._serviceInstances[name]) {
-      if (typeof this._serviceCreators[name] === 'function') {
-        this._serviceInstances[name] = this._serviceCreators[name](this);
-      } else {
-        throw new Error('Can not get service, No creator for: ' + name);
-      }
-    }
-
-    return this._serviceInstances[name];
-  };
-
-  return ServiceFactory;
-}();
 
 function getInstrumentationFlags(instrument, disabledInstrumentations) {
   var _flags;
@@ -4694,31 +4775,38 @@ function getInstrumentationFlags(instrument, disabledInstrumentations) {
   return flags;
 }
 
-function createServiceFactory() {
-  var serviceFactory = new ServiceFactory();
-  serviceFactory.registerCoreServices();
-  ErrorLogging$1.registerServices(serviceFactory);
-  PerformanceMonitoring$1.registerServices(serviceFactory);
-  return serviceFactory;
-}
-
-var alreadyBootstrap = false;
 var enabled = false;
 function bootstrap() {
-  if (alreadyBootstrap) {
-    return enabled;
-  }
-
-  alreadyBootstrap = true;
-
   if (isPlatformSupported()) {
     patchAll();
+    bootstrapPerf();
+    state.bootstrapTime = now();
     enabled = true;
-  } else if (typeof window !== 'undefined') {
+  } else if (isBrowser) {
     console.log('[Elastic APM] platform is not supported!');
   }
 
   return enabled;
+}
+function bootstrapPerf() {
+  if (document.visibilityState === 'hidden') {
+    state.lastHiddenStart = 0;
+  }
+
+  window.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') {
+      state.lastHiddenStart = performance.now();
+    }
+  }, {
+    capture: true
+  });
+}
+
+function createServiceFactory() {
+  registerServices$1();
+  registerServices();
+  var serviceFactory = new ServiceFactory();
+  return serviceFactory;
 }
 
 var ApmBase = function () {
@@ -4735,10 +4823,13 @@ var ApmBase = function () {
 
     if (this.isEnabled() && !this._initialized) {
       this._initialized = true;
-      var configService = this.serviceFactory.getService('ConfigService');
-      configService.setVersion('5.1.1');
+
+      var _this$serviceFactory$ = this.serviceFactory.getService([CONFIG_SERVICE, LOGGING_SERVICE]),
+          configService = _this$serviceFactory$[0],
+          loggingService = _this$serviceFactory$[1];
+
+      configService.setVersion('5.3.0');
       this.config(config);
-      var loggingService = this.serviceFactory.getService('LoggingService');
 
       if (configService.isActive()) {
         this.serviceFactory.init();
@@ -4770,9 +4861,11 @@ var ApmBase = function () {
   };
 
   _proto.fetchCentralConfig = function fetchCentralConfig() {
-    var apmServer = this.serviceFactory.getService('ApmServer');
-    var loggingService = this.serviceFactory.getService('LoggingService');
-    var configService = this.serviceFactory.getService('ConfigService');
+    var _this$serviceFactory$2 = this.serviceFactory.getService([APM_SERVER, LOGGING_SERVICE, CONFIG_SERVICE]),
+        apmServer = _this$serviceFactory$2[0],
+        loggingService = _this$serviceFactory$2[1],
+        configService = _this$serviceFactory$2[2];
+
     return apmServer.fetchConfig(configService.get('serviceName'), configService.get('environment')).then(function (config) {
       var transactionSampleRate = config['transaction_sample_rate'];
 
@@ -4832,12 +4925,12 @@ var ApmBase = function () {
   };
 
   _proto.observe = function observe(name, fn) {
-    var configService = this.serviceFactory.getService('ConfigService');
+    var configService = this.serviceFactory.getService(CONFIG_SERVICE);
     configService.events.observe(name, fn);
   };
 
   _proto.config = function config(_config) {
-    var configService = this.serviceFactory.getService('ConfigService');
+    var configService = this.serviceFactory.getService(CONFIG_SERVICE);
 
     var _configService$valida2 = configService.validate(_config),
         missing = _configService$valida2.missing,
@@ -4846,7 +4939,7 @@ var ApmBase = function () {
     if (missing.length === 0 && invalid.length === 0) {
       configService.setConfig(_config);
     } else {
-      var loggingService = this.serviceFactory.getService('LoggingService');
+      var loggingService = this.serviceFactory.getService(LOGGING_SERVICE);
       var separator = ', ';
       var message = "RUM agent isn't correctly configured. ";
 
@@ -4872,23 +4965,23 @@ var ApmBase = function () {
   };
 
   _proto.setUserContext = function setUserContext(userContext) {
-    var configService = this.serviceFactory.getService('ConfigService');
+    var configService = this.serviceFactory.getService(CONFIG_SERVICE);
     configService.setUserContext(userContext);
   };
 
   _proto.setCustomContext = function setCustomContext(customContext) {
-    var configService = this.serviceFactory.getService('ConfigService');
+    var configService = this.serviceFactory.getService(CONFIG_SERVICE);
     configService.setCustomContext(customContext);
   };
 
   _proto.addLabels = function addLabels(labels) {
-    var configService = this.serviceFactory.getService('ConfigService');
+    var configService = this.serviceFactory.getService(CONFIG_SERVICE);
     configService.addLabels(labels);
   };
 
   _proto.setInitialPageLoadName = function setInitialPageLoadName(name) {
     if (this.isEnabled()) {
-      var configService = this.serviceFactory.getService('ConfigService');
+      var configService = this.serviceFactory.getService(CONFIG_SERVICE);
       configService.setConfig({
         pageLoadTransactionName: name
       });
@@ -4924,21 +5017,30 @@ var ApmBase = function () {
   };
 
   _proto.addFilter = function addFilter(fn) {
-    var configService = this.serviceFactory.getService('ConfigService');
+    var configService = this.serviceFactory.getService(CONFIG_SERVICE);
     configService.addFilter(fn);
   };
 
   return ApmBase;
 }();
 
-var enabled$1 = bootstrap();
-var serviceFactory = createServiceFactory();
-var apmBase = new ApmBase(serviceFactory, !enabled$1);
+function getApmBase() {
+  if (isBrowser && window.elasticApm) {
+    return window.elasticApm;
+  }
 
-if (typeof window !== 'undefined') {
-  window.elasticApm = apmBase;
+  var enabled = bootstrap();
+  var serviceFactory = createServiceFactory();
+  var apmBase = new ApmBase(serviceFactory, !enabled);
+
+  if (isBrowser) {
+    window.elasticApm = apmBase;
+  }
+
+  return apmBase;
 }
 
+var apmBase = getApmBase();
 var init = apmBase.init.bind(apmBase);
 
 export default init;

@@ -10,9 +10,9 @@ const originalPostJson = apmServer._postJson;
 export function initApm(name) {
   return init({
     serviceName: name,
-    pageLoadTransactionName: name,
     serverUrl: window.location.origin,
-    breakdownMetrics: true
+    breakdownMetrics: true,
+    apiVersion: 3
   });
 }
 

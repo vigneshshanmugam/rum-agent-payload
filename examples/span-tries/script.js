@@ -1,250 +1,258 @@
 import { apm } from "../../web_modules/@elastic/apm-rum.js";
-import {
-  initApm,
-  renderPayloadSize,
-  removeUnncessaryTrFields
-} from "../utils.js";
+import { initApm, renderPayloadSize } from "../utils.js";
 
 initApm("rum-metricsets");
 
-const perfMonitoring = apm.serviceFactory.getService("PerformanceMonitoring");
 const apmServer = apm.serviceFactory.getService("ApmServer");
 
-perfMonitoring.createTransactionDataModel = removeUnncessaryTrFields;
-apmServer.ndjsonTransactions = transactions => {
+apmServer.ndjsonTransactions = (transactions, compress) => {
   return transactions.map(tr => {
-    const breakdowns = tr.breakdown;
-    breakdowns.forEach(breakdown => {
-      delete breakdown.transaction;
-    });
-    tr.breakdown = breakdowns;
-    const compressed = compressTransaction(tr);
-    return JSON.stringify({ tr: compressed });
+    return JSON.stringify({ x: compressTransaction(tr) });
   });
 };
+
 apmServer._postJson = renderPayloadSize;
 
-function compressTransaction(transaction) {
+function compressResponse(response) {
+  return {
+    ts: response.transfer_size,
+    ebs: response.encoded_body_size,
+    dbs: response.decoded_body_size
+  };
+}
+
+function compressHTTP(http) {
   const compressed = {};
-  for (const key of Object.keys(transaction)) {
-    const value = transaction[key];
-    switch (key) {
-      case "trace_id":
-        compressed["tid"] = value;
-        break;
-      case "name":
-        compressed["n"] = value;
-        break;
-      case "spans":
-        const optimisedSpans = [];
-        const spanMap = {};
-        /**
-         * Group spanss
-         */
-        value.forEach(span => {
-          const { type } = span;
-          if (!spanMap[type]) {
-            spanMap[type] = [];
-          }
-          spanMap[type].push(span);
-        });
+  const { method, status_code, url, response } = http;
 
-        Object.keys(spanMap).forEach(key => {
-          const spans = spanMap[key];
-
-          const entries = spans.reduce((acc, span) => {
-            acc[span.name] = compressSpan(span, true);
-            return acc;
-          }, {});
-
-          const trie = createTrie(entries);
-          optimize(trie);
-          optimisedSpans.push({
-            [key]: trie
-          });
-        });
-        compressed["sp"] = optimisedSpans;
-        break;
-      case "breakdown":
-        compressed["b"] = compressBreakdown(value);
-        break;
-      case "context":
-        compressed["c"] = compresContext(value);
-        break;
-      case "type":
-        compressed["t"] = value;
-        break;
-      case "marks":
-        compressed["m"] = value;
-        break;
-      case "duration":
-        compressed["d"] = value;
-        break;
-      case "sampled":
-        compressed["sa"] = value;
-        break;
-      default:
-        compressed[key] = value;
-    }
+  compressed.url = url;
+  if (method) {
+    compressed.mt = method;
   }
-
-  console.log("Compressed transaction", compressed);
+  if (status_code) {
+    compressed.sc = status_code;
+  }
+  if (response) {
+    compressed.r = compressResponse(response);
+  }
 
   return compressed;
 }
 
-function compressSpan(span, skip = false) {
-  let newSpan = {};
-  for (const key of Object.keys(span)) {
-    const value = span[key];
-    if (value === undefined) {
-      continue;
-    }
-    switch (key) {
-      case "name":
-        if (!skip) {
-          newSpan["n"] = value;
-        }
-        break;
-      case "type":
-        if (!skip) {
-          newSpan["t"] = value;
-        }
-        break;
-      case "start":
-        newSpan["st"] = value;
-        break;
-      case "duration":
-        newSpan["d"] = value;
-        break;
-      case "context":
-        newSpan["c"] = compresContext(value);
-        break;
-      default:
-        newSpan[key] = value;
-    }
+function compressContext(context) {
+  if (!context) {
+    return null;
   }
-  return newSpan;
+  const compressed = {};
+  const { page, http, response, destination, user, custom } = context;
+
+  if (page) {
+    compressed.p = {
+      rf: page.referer,
+      url: page.url
+    };
+  }
+  if (http) {
+    compressed.h = compressHTTP(http);
+  }
+  if (response) {
+    compressed.r = compressResponse(response);
+  }
+  if (destination) {
+    const { service } = destination;
+    compressed.dt = {
+      se: {
+        n: service.name,
+        t: service.type,
+        rc: service.resource
+      },
+      ad: destination.address,
+      po: destination.port
+    };
+  }
+  if (user) {
+    compressed.u = {
+      id: user.id,
+      un: user.username,
+      em: user.email
+    };
+  }
+  if (custom) {
+    compressed.cu = custom;
+  }
+
+  return compressed;
 }
 
-function compresSpans(spans) {
-  return spans.map(span => {
-    return compressSpan(span);
+const NAVIGATION_TIMING_MARKS = [
+  "fetchStart",
+  "domainLookupStart",
+  "domainLookupEnd",
+  "connectStart",
+  "connectEnd",
+  "requestStart",
+  "responseStart",
+  "responseEnd",
+  "domLoading",
+  "domInteractive",
+  "domContentLoadedEventStart",
+  "domContentLoadedEventEnd",
+  "domComplete",
+  "loadEventStart",
+  "loadEventEnd"
+];
+
+const COMPRESSED_NAV_TIMING_MARKS = [
+  "fs",
+  "ls",
+  "le",
+  "cs",
+  "ce",
+  "qs",
+  "rs",
+  "re",
+  "dl",
+  "di",
+  "ds",
+  "de",
+  "dc",
+  "es",
+  "ee"
+];
+
+function compressMarks(marks) {
+  if (!marks) {
+    return null;
+  }
+  const { navigationTiming, agent } = marks;
+  const compressed = { nt: {} };
+
+  COMPRESSED_NAV_TIMING_MARKS.forEach((mark, index) => {
+    const mapping = NAVIGATION_TIMING_MARKS[index];
+    compressed.nt[mark] = navigationTiming[mapping];
   });
-}
 
-function compresContext(obj) {
-  let newObj = {};
-  for (const key of Object.keys(obj)) {
-    const value = obj[key];
-    switch (key) {
-      case "page":
-        newObj["p"] = {
-          u: value["url"],
-          r: value["referer"]
-        };
-        break;
-      case "response":
-        newObj["rp"] = compressResponse(value);
-        break;
-      case "request":
-        newObj["rq"] = value;
-        break;
-      case "http":
-        newObj["h"] = compressHttp(value);
-        break;
-      default:
-        newObj[key] = value;
-    }
+  compressed.a = {
+    fb: compressed.nt.rs,
+    di: compressed.nt.di,
+    dc: compressed.nt.dc
+  };
+  const fp = agent.firstContentfulPaint;
+  const lp = agent.largestContentfulPaint;
+  if (fp) {
+    compressed.a.fp = fp;
   }
-  return newObj;
-}
-
-function compressHttp(obj) {
-  let newObj = {};
-  for (const key of Object.keys(obj)) {
-    const value = obj[key];
-    switch (key) {
-      case "response":
-        newObj["rp"] = compressResponse(value);
-        break;
-      default:
-        newObj[key] = value;
-    }
+  if (lp) {
+    compressed.a.lp = lp;
   }
-  return newObj;
+
+  return compressed;
 }
 
-function compressResponse(obj) {
-  let newObj = {};
-  for (const key of Object.keys(obj)) {
-    const value = obj[key];
-    switch (key) {
-      case "decoded_body_size":
-        newObj["ds"] = value;
-        break;
-      case "encoded_body_size":
-        newObj["es"] = value;
-        break;
-      case "transfer_size":
-        newObj["ts"] = value;
-        break;
-      default:
-        newObj[key] = value;
+function compressMetricsets(breakdowns) {
+  return breakdowns.map(({ span, samples }) => {
+    const isSpan = span != null;
+    if (isSpan) {
+      return {
+        y: { t: span.type },
+        sa: {
+          ysc: {
+            v: samples["span.self_time.count"].value
+          },
+          yss: {
+            v: samples["span.self_time.sum.us"].value
+          }
+        }
+      };
     }
-  }
-  return newObj;
-}
-
-function compressBreakdown(breakdowns) {
-  return breakdowns.map(breakdown => {
-    let newBreakdown = {};
-    for (const key of Object.keys(breakdown)) {
-      const value = breakdown[key];
-      switch (key) {
-        case "samples":
-          newBreakdown["sa"] = compresSamples(value);
-          break;
-        case "span":
-          newBreakdown["sp"] = compressSpan(value);
-          break;
-        default:
-          newBreakdown[key] = value;
+    return {
+      sa: {
+        xdc: {
+          v: samples["transaction.duration.count"].value
+        },
+        xds: {
+          v: samples["transaction.duration.sum.us"].value
+        },
+        xbc: {
+          v: samples["transaction.breakdown.count"].value
+        }
       }
-    }
-    return newBreakdown;
+    };
   });
 }
 
-function compresSamples(sample) {
-  let newSample = {};
-  for (const key of Object.keys(sample)) {
-    const value = sample[key];
-    switch (key) {
-      case "transaction.breakdown.count":
-        newSample["trbc"] = compressValue(value);
-        break;
-      case "transaction.duration.count":
-        newSample["trdc"] = compressValue(value);
-        break;
-      case "transaction.duration.sum.us":
-        newSample["trds"] = compressValue(value);
-        break;
-      case "span.self_time.count":
-        newSample["spsc"] = compressValue(value);
-        break;
-      case "span.self_time.sum.us":
-        newSample["spss"] = compressValue(value);
-        break;
-      default:
-        newSample[key] = value;
+function compressTransaction(transaction) {
+  /**
+   * Group spans
+   */
+  const optimisedSpans = [];
+  const spanMap = {};
+
+  transaction.spans.forEach(span => {
+    const { type } = span;
+    if (!spanMap[type]) {
+      spanMap[type] = [];
     }
-  }
-  return newSample;
+    spanMap[type].push(span);
+  });
+
+  Object.keys(spanMap).forEach(key => {
+    const spans = spanMap[key];
+    const entries = spans.reduce((acc, span) => {
+      acc[span.name] = compressSpan(span, transaction);
+      return acc;
+    }, {});
+
+    const trie = createTrie(entries);
+    optimize(trie);
+    optimisedSpans.push({
+      [key]: trie
+    });
+  });
+
+  const compressed = {
+    id: transaction.id,
+    tid: transaction.trace_id,
+    n: transaction.name,
+    t: transaction.type,
+    d: transaction.duration,
+    c: compressContext(transaction.context),
+    m: compressMarks(transaction.marks),
+    me: compressMetricsets(transaction.breakdown),
+    y: optimisedSpans,
+    yc: {
+      sd: transaction.spans.length
+    },
+    sm: transaction.sampled
+  };
+
+  console.log(compressed);
+  return compressed;
 }
 
-function compressValue({ value }) {
-  return { v: parseInt(value) };
+function compressSpan(span, transaction) {
+  const spanData = {
+    id: span.id,
+    // n: span.name,
+    // t: span.type,
+    s: span.start,
+    d: span.duration,
+    c: compressContext(span.context)
+  };
+
+  if (span.parent_id !== transaction.id) {
+    spanData.pid = span.parent_id;
+  }
+  if (span.sync === true) {
+    spanData.sy = true;
+  }
+  if (span.subtype) {
+    spanData.su = span.subtype;
+  }
+  if (span.action) {
+    spanData.ac = span.action;
+  }
+  return spanData;
 }
 
 function createTrie(entries) {
